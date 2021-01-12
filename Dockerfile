@@ -29,11 +29,37 @@ ARG THREADS
 
 RUN apt-get update 
 RUN apt-get install -y \
-	wget g++-5 git cmake unzip bc python python-contextlib2 \
-	libtbb-dev libboost-dev zlib1g-dev libxt-dev libexpat1-dev \
-	libgstreamer1.0-dev libqt4-dev dc
-COPY . /usr/src/structural-pipeline
-RUN cd /usr/src/structural-pipeline \
+  bc \
+  g++-5 \
+  git \
+  libboost-dev \
+  libexpat1-dev \
+	libgstreamer1.0-dev \
+  libqt4-dev dc \
+	libssl-dev \
+	libtbb-dev \
+  libxt-dev \
+  python \
+  python-contextlib2 \
+  unzip \
+	wget \
+  zlib1g-dev 
+
+WORKDIR /usr/local/src
+
+# xenial comes with 3.5, too old for MIRTK master
+ENV CMAKE_VERSION 3.18.2
+ENV CMAKE_URL https://github.com/Kitware/CMake/releases/download
+
+RUN wget ${CMAKE_URL}/v$CMAKE_VERSION/cmake-$CMAKE_VERSION.tar.gz \
+	&& tar xf cmake-${CMAKE_VERSION}.tar.gz \
+	&& cd cmake-${CMAKE_VERSION} \
+	&& ./configure \
+	&& make V=0 \
+	&& make install
+
+COPY . structural-pipeline
+RUN cd structural-pipeline \
 	&& echo "please ignore the 'failed to download miniconda' error coming soon" \
 	&& python fslinstaller.py -V 5.0.11 -q -d /usr/local/fsl \
 	&& export FSLDIR=/usr/local/fsl \
@@ -44,10 +70,10 @@ RUN cd /usr/src/structural-pipeline \
 
 RUN NUM_CPUS=${THREADS:-`cat /proc/cpuinfo | grep processor | wc -l`} \
 	&& echo "Maximum number of build threads = $NUM_CPUS" \
-	&& cd /usr/src/structural-pipeline \
+	&& cd structural-pipeline \
 	&& ./setup.sh -j $NUM_CPUS
 
 WORKDIR /data
-ENTRYPOINT ["/usr/src/structural-pipeline/dhcp-pipeline.sh"]
+ENTRYPOINT ["/usr/local/src/structural-pipeline/dhcp-pipeline.sh"]
 CMD ["-help"]
 

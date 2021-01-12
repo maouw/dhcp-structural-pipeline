@@ -191,10 +191,11 @@ set_if_undef VTK_version=v7.0.0
 set_if_undef VTK_folder="$pipeline_build/VTK"
 set_if_undef VTK_build="$pipeline_build/VTK/build"
 
+# git master dhcp of 12 jan to get the neonatal surface recon fixes
 set_if_undef MIRTK_install=1
 set_if_undef MIRTK_git=https://github.com/BioMedIA/MIRTK.git
-set_if_undef MIRTK_branch=dhcp-v1
-set_if_undef MIRTK_version=078553da78ab449e12b877b2852ebcf5d10de7ba
+set_if_undef MIRTK_branch=master
+set_if_undef MIRTK_version=9230bfba3bfdb3b04c64ec27d0ae783955f6a0dd
 set_if_undef MIRTK_folder="$pipeline_build/MIRTK"
 set_if_undef MIRTK_build="$pipeline_build/MIRTK/build"
 set_if_undef MIRTK_cmake_flags="-DMODULE_Deformable=ON -DMODULE_DrawEM=ON -DDEPENDS_Eigen3_DIR=$code_dir/ThirdParty/eigen-eigen-67e894c6cd8f -DWITH_VTK=ON -DDEPENDS_VTK_DIR=$VTK_build -DWITH_TBB=ON -DITK_DIR=$ITK_build"

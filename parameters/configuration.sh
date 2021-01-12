@@ -36,7 +36,8 @@ export registration_config=$parameters_dir/ireg-structural.cfg
 export registration_config_template=$parameters_dir/ireg.cfg
 
 # surface reconstuction parameters
-export surface_recon_config=$parameters_dir/recon-neonatal-cortex.cfg
+# v2 is for git master MIRTK with tuned pial generation
+export surface_recon_config=$parameters_dir/recon-neonatal-cortex2.cfg
 
 # log function
 run()
