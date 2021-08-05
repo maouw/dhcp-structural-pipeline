@@ -179,26 +179,30 @@ set_if_undef WORKBENCH_cmake_flags="-DCMAKE_CXX_STANDARD=11 -DCMAKE_CXX_STANDARD
 set_if_undef ITK_install=1
 set_if_undef ITK_git=https://github.com/InsightSoftwareConsortium/ITK.git
 set_if_undef ITK_branch=master
-set_if_undef ITK_version=v4.11.1
+set_if_undef ITK_version=v5.1.2
 set_if_undef ITK_folder="$pipeline_build/ITK"
 set_if_undef ITK_build="$pipeline_build/ITK/build"
 set_if_undef ITK_cmake_flags="-DBUILD_EXAMPLES=OFF -DBUILD_SHARED_LIBS=ON -DBUILD_TESTING=OFF"
 
+# SphericalMesh doesn't work with vtk9 (vtk9 no longer supports VTK_USE_FILE)
 set_if_undef VTK_install=1
 set_if_undef VTK_git=https://github.com/Kitware/VTK.git
 set_if_undef VTK_branch=release
-set_if_undef VTK_version=v7.0.0
+set_if_undef VTK_version=v8.2.0
 set_if_undef VTK_folder="$pipeline_build/VTK"
 set_if_undef VTK_build="$pipeline_build/VTK/build"
 
 # git master dhcp of 12 jan to get the neonatal surface recon fixes
+# git master MIRTK is python3 only and needs the -D to make sure it picks the
+# right one
+# you need 1.2.1 of drawem, see special hack below
 set_if_undef MIRTK_install=1
 set_if_undef MIRTK_git=https://github.com/BioMedIA/MIRTK.git
 set_if_undef MIRTK_branch=master
 set_if_undef MIRTK_version=9230bfba3bfdb3b04c64ec27d0ae783955f6a0dd
 set_if_undef MIRTK_folder="$pipeline_build/MIRTK"
 set_if_undef MIRTK_build="$pipeline_build/MIRTK/build"
-set_if_undef MIRTK_cmake_flags="-DMODULE_Deformable=ON -DMODULE_DrawEM=ON -DDEPENDS_Eigen3_DIR=$code_dir/ThirdParty/eigen-eigen-67e894c6cd8f -DWITH_VTK=ON -DDEPENDS_VTK_DIR=$VTK_build -DWITH_TBB=ON -DITK_DIR=$ITK_build"
+set_if_undef MIRTK_cmake_flags="-DMODULE_Deformable=ON -DMODULE_DrawEM=ON -DDEPENDS_Eigen3_DIR=$code_dir/ThirdParty/eigen-eigen-67e894c6cd8f -DWITH_VTK=ON -DDEPENDS_VTK_DIR=$VTK_build -DWITH_TBB=ON -DITK_DIR=$ITK_build -DPYTHON_EXECUTABLE=/usr/bin/python3"
 
 set_if_undef SPHERICALMESH_install=1
 set_if_undef SPHERICALMESH_git=https://github.com/amakropoulos/SphericalMesh.git
@@ -226,10 +230,10 @@ for package in ${packages};do
     run git submodule update
 
     # aee8fba is the version used in the first and second data releases
-    # v1.2.1 has all the latest stuff
+    # v1.2.1 for release 3
     # scripts/segmentation/pipeline.sh knows how to run the two versions
     if [ $package == "MIRTK" ]; then
-      # ( cd Packages/DrawEM && git checkout aee8fba )
+    #   ( cd Packages/DrawEM && git checkout aee8fba )
       ( cd Packages/DrawEM \
         && run echo checking out drawem 121 \
         && git checkout v1.2.1 )

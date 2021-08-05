@@ -26,6 +26,8 @@ ARG THREADS
 #	  * fslinstaller.py fails in post_install as it gives the wrong flag 
 #	    to wget to enable silent mode ... run the post install again 
 #	    to fix this
+#
+# MIRTK master is python3 only
 
 RUN apt-get update 
 RUN apt-get install -y \
@@ -39,8 +41,7 @@ RUN apt-get install -y \
 	libssl-dev \
 	libtbb-dev \
   libxt-dev \
-  python \
-  python-contextlib2 \
+  python3 \
   unzip \
 	wget \
   zlib1g-dev 
@@ -58,9 +59,8 @@ RUN wget ${CMAKE_URL}/v$CMAKE_VERSION/cmake-$CMAKE_VERSION.tar.gz \
 	&& make V=0 \
 	&& make install
 
-COPY . structural-pipeline
-RUN cd structural-pipeline \
-	&& echo "please ignore the 'failed to download miniconda' error coming soon" \
+COPY fslinstaller.py /usr/local/src
+RUN echo "please ignore the 'failed to download miniconda' error coming soon" \
 	&& python fslinstaller.py -V 5.0.11 -q -d /usr/local/fsl \
 	&& export FSLDIR=/usr/local/fsl \
 	&& echo "retrying miniconda install ..." \
@@ -68,6 +68,12 @@ RUN cd structural-pipeline \
 	&& mkdir -p /etc/fsl \
 	&& echo "FSLDIR=/usr/local/fsl; . \${FSLDIR}/etc/fslconf/fsl.sh; PATH=\${FSLDIR}/bin:\${PATH}; export FSLDIR PATH" > /etc/fsl/fsl.sh 
 
+# more stuff needed by chunks of the struct pipeline when we update to latest
+# itk/vtk/mirtk
+RUN apt-get install -y \
+  libhdf5-dev 
+
+COPY . structural-pipeline
 RUN NUM_CPUS=${THREADS:-`cat /proc/cpuinfo | grep processor | wc -l`} \
 	&& echo "Maximum number of build threads = $NUM_CPUS" \
 	&& cd structural-pipeline \
