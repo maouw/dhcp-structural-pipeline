@@ -57,6 +57,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     set -e \
     && apt-get install -yq --no-install-recommends intel-hpckit-2023.2.0
 
+ENV ONEAPI_SETVARS_PATH="/opt/intel/oneapi/setvars.sh"
 
 ARG WITH_INTEL_ONEAPI_PYTHON=1
 ARG INTEL_ONEAPI_PYTHON_VERSION=2023.2.0-49420
@@ -106,10 +107,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
     <<-EOF
-    source /opt/intel/oneapi/setvars.sh >/dev/null 2>&1
+    source "${ONEAPI_SETVARS_PATH}" >/dev/null 2>&1; ldconfig
     apt-get install -yq --no-install-recommends \
         libboost-dev \
-        libeigen3-dev \
         libfreetype6-dev \
         libftgl-dev \
         libosmesa6-dev \
@@ -142,7 +142,7 @@ RUN <<-EOF
         tar xf src.tar.gz --directory=src --strip-components=1
         rm -rf src.tar.gz
         cd build
-        source /opt/intel/oneapi/setvars.sh >/dev/null 2>&1
+        source "${ONEAPI_SETVARS_PATH}" >/dev/null 2>&1; ldconfig
         cmake \
             -D CMAKE_INSTALL_PREFIX="${BUILT_DIR}" \
             -D CMAKE_PREFIX_PATH="${BUILT_DIR}:${CMAKE_PREFIX_PATH:-}" \
@@ -168,7 +168,7 @@ RUN <<-EOF
     rm src.tar.gz
 
     cd build
-    source /opt/intel/oneapi/setvars.sh >/dev/null 2>&1
+    source "${ONEAPI_SETVARS_PATH}" >/dev/null 2>&1; ldconfig
     if [ -n "${NCPU:-}" ]; then
         NCPU="$(getnproc "${NCPU:-/1}")"
         NCPU="${NCPU:-1}"
@@ -209,7 +209,7 @@ RUN <<-EOF
     rm src.tar.gz
     cd build
 
-    source /opt/intel/oneapi/setvars.sh >/dev/null 2>&1
+    source "${ONEAPI_SETVARS_PATH}" >/dev/null 2>&1; ldconfig
     
     if [ -n "${NCPU:-}" ]; then
         NCPU="$(getnproc "${NCPU:-/1}")"
@@ -237,30 +237,37 @@ RUN <<-EOF
     rm -rf build src
 EOF
 
-FROM build-itk as build-mirtk
+# FROM build-itk as build-atlases
+# ENV PIPELINE_DIR "${BUILT_DIR}/pipeline"
+# WORKDIR "${BUILT_DIR}/share"
+# ARG ATLASES_URL="https://biomedic.doc.ic.ac.uk/brain-development/downloads/dHCP/atlases-dhcp-structural-pipeline-v1.zip"
+# SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
+# RUN <<-EOF
+#     curl -fL -o atlases-dhcp-structural-pipeline-v1.zip "${ATLASES_URL}"
+#     unzip atlases-dhcp-structural-pipeline-v1.zip -d .
+#     rm atlases-dhcp-structural-pipeline-v1.zip
+# EOF
+
+FROM build-itk as build-mirtk-keep-src
 WORKDIR /opt/build/mirtk
 ARG NCPU="/2"
 ARG ADD_INTEL_CFLAGS="-O3 -axCORE-AVX512,CORE-AVX2 -xAVX"
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 RUN <<-EOF
-    source /opt/intel/oneapi/setvars.sh >/dev/null 2>&1
-    ldconfig
+    source "${ONEAPI_SETVARS_PATH}" >/dev/null 2>&1; ldconfig
 
     git clone --recursive -b dhcp-v1  https://github.com/BioMedIA/MIRTK.git src
     cd src
     git reset --hard 078553da78ab449e12b877b2852ebcf5d10de7ba
     git submodule update
-    (cd Packages/DrawEM && git checkout v1.2.1)
+    (cd Packages/DrawEM && git checkout v1.2.1 &&  git checkout 33ed778 -- Atlases.cmake && echo 'include(Atlases.cmake)' >> CMakeLists.txt)
 
+    # Fix TBB build:
     git checkout be86b02 -- CMake/Modules/FindTBB.cmake Modules/Common/src/Parallel.cc Modules/Common/include/mirtk/Parallel.h
     sed -Ei 's/(^.*\bMIRTK_Common_EXPORT\b.*\btbb_scheduler.*$)/\/\/ \1/g' Modules/Common/include/mirtk/Parallel.h
     sed -Ei 's/(^.*tbb::task_scheduler_init.*$)/\/\/ \1/g' Modules/Common/include/mirtk/Parallel.h
     sed -Ei 's/(^.*tbb[/]task_scheduler_init.h.*$)/\/\/ \1/g' Modules/Common/include/mirtk/Parallel.h
     
-    cd /opt/build/mirtk/src/Packages/DrawEM
-    curl -fL -o atlases-dhcp-structural-pipeline-v1.zip 'https://biomedic.doc.ic.ac.uk/brain-development/downloads/dHCP/atlases-dhcp-structural-pipeline-v1.zip'
-    unzip atlases-dhcp-structural-pipeline-v1.zip -d .
-    rm atlases-dhcp-structural-pipeline-v1.zip
     cd /opt/build/mirtk
     mkdir build && cd build
     
@@ -288,10 +295,9 @@ RUN <<-EOF
     make -S ${NCPU:+-j "${NCPU}"}
     make install
     cd ../
-    rm -rf src build
 EOF
 
-FROM build-mirtk as build-workbench
+FROM build-mirtk-keep-src as build-workbench
 WORKDIR /opt/build/workbench
 ARG WORKBENCH_GIT_TAG=
 ARG NCPU="/2"
@@ -314,7 +320,8 @@ RUN <<-EOF
     
     cd build
     
-    source /opt/intel/oneapi/setvars.sh >/dev/null 2>&1
+    source "${ONEAPI_SETVARS_PATH}" >/dev/null 2>&1; ldconfig
+
     if [ -n "${NCPU:-}" ]; then
         NCPU="$(getnproc "${NCPU:-/1}")"
         NCPU="${NCPU:-1}"
@@ -340,19 +347,36 @@ RUN <<-EOF
     rm -rf build src
 EOF
 
-FROM build-workbench as build-pipeline
-WORKDIR /opt/build/pipeline/src
-COPY --chmod=a+rX dhcp-pipeline.sh version CMakeLists.txt CHANGES.txt ./
+FROM build-workbench as build-fsl
+SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
+RUN <<-EOF
+    source "${ONEAPI_SETVARS_PATH}" >/dev/null 2>&1; ldconfig
+    conda config --append channels https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/
+    conda config --append channels conda-forge
+    conda install -y --verbose -n base fsl-avwutils
+    conda clean --all -y
+    FSLBINS="$(command -v fslmaths || true)"
+    [[ -n "${FSLBINS:-}" ]] || { echo "No fslmaths found" >&2; exit 1; }
+    FSLDIR="${FSLBINS%/*/*}"
+    [[ -n "${FSLBINS:-}" ]] || { echo "Could not set FSLDIR from \"${FSLBINS}\"" >&2; exit 1; }
+	mkdir -p /etc/fsl
+	echo "FSLDIR=\"${FSLDIR}\"; . \${FSLDIR}/etc/fslconf/fsl.sh; export FSLDIR" > /etc/fsl/fsl.sh 
+EOF
+
+
+FROM build-fsl as build-pipeline
+WORKDIR "/opt/build/pipeline"
+COPY --chmod=a+rX dhcp-pipeline.sh version "${PIPELINE_DIR}"/
+COPY --chmod=a+rX parameters "${PIPELINE_DIR}"/parameters
+COPY --chmod=a+rX scripts "${PIPELINE_DIR}"/scripts
+COPY --chmod=a+rX version CMakeLists.txt CHANGES.txt ./
 COPY --chmod=a+rX applications ./applications
-COPY --chmod=a+rX parameters ./parameters
-COPY --chmod=a+rX scripts ./scripts
 COPY --chmod=a+rX ThirdParty ./ThirdParty
-WORKDIR /opt/build/pipeline
 ARG NCPU="/2"
 ARG ADD_INTEL_CFLAGS="-O3 -axCORE-AVX512,CORE-AVX2 -xAVX"
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 RUN <<-EOF
-    source /opt/intel/oneapi/setvars.sh >/dev/null 2>&1    
+    source "${ONEAPI_SETVARS_PATH}" >/dev/null 2>&1; ldconfig
     if [ -n "${NCPU:-}" ]; then
         NCPU="$(getnproc "${NCPU:-/1}")"
         NCPU="${NCPU:-1}"
@@ -376,6 +400,11 @@ RUN <<-EOF
         -D MIRTK_DIR="${BUILT_DIR}" \
         ../src
     make -S ${NCPU:+-j "${NCPU}"}
+    install -v -Dm755 bin/*  /opt/built/bin/
+    install -v -Dm766
+#    echo "export DRAWEMDIR=$DRAWEMDIR" >> $code_dir/parameters/path.sh
+#    echo "export DRAWEMDIR=$DRAWEMDIR" >> $code_dir/parameters/path.sh
+#    echo "export PATH=$pathext:"'${PATH}' >> $code_dir/parameters/path.sh
     cd /opt/build/pipeline
 EOF
 
@@ -387,7 +416,7 @@ EOF
 # RUN <<-EOF    
 #     mkdir -p build && cd build
     
-#     source /opt/intel/oneapi/setvars.sh >/dev/null 2>&1
+#     source "${ONEAPI_SETVARS_PATH}" >/dev/null 2>&1; ldconfig
 #     export CMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}:/usr:/usr/local"
 #     if [ -n "${NCPU:-}" ]; then
 #         NCPU="$(getnproc "${NCPU:-/1}")"
