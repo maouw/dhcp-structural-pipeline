@@ -5,6 +5,7 @@
 #FROM intel/oneapi-basekit:2023.2.1-devel-ubuntu20.04 as builder
 FROM ubuntu:20.04 as builder
 
+
 # Global system-level config
 ENV TZ=UTC \
     LANGUAGE=en_US:en \
@@ -12,6 +13,7 @@ ENV TZ=UTC \
     LANG=C.UTF-8 \
     DEBIAN_FRONTEND=noninteractive \
     APT_KEY_DONT_WARN_ON_DANGEROUS_USAGE=1
+
 
 # Force apt to leave downloaded binaries in /var/cache/apt (massively speeds up Docker builds)
 RUN rm -f /etc/apt/apt.conf.d/docker-clean; echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache
@@ -22,440 +24,330 @@ RUN echo 'Acquire::Queue-Mode "host";' > /etc/apt/apt.conf.d/99queue
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
-    set -e \
-    && apt-get update -yq \
-    && apt-get install -yq --no-install-recommends \
-    curl \
-    ca-certificates \
-    gpg-agent \
-    software-properties-common \
-    && curl -fsSL https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS-2023.PUB | gpg --dearmor > /usr/share/keyrings/intel-oneapi-archive-keyring.gpg \
-    && echo "deb [signed-by=/usr/share/keyrings/intel-oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main " > /etc/apt/sources.list.d/oneAPI.list \
-    && apt-get update -yq
+    apt-get update -yq && \
+    apt-get install -yq \
+        bc \
+        build-essential \
+        ca-certificates \
+        cmake \
+        curl \
+        git \
+        gpg-agent \
+        less \
+        libarchive13 \
+        libtool \
+        nano \
+        net-tools \
+        ninja-build \
+        openssh-client \
+        pkg-config \
+        software-properties-common \
+        unzip \
+        wget
 
 # Install essential build tools:
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
-    set -e \
-    && apt-get install -yq --no-install-recommends \
-    build-essential \
-    cmake \
-    git \
-    less \
-    libarchive13 \
-    nano \
-    net-tools \
-    openssh-client \
-    pkg-config \
-    unzip \
-    wget
+FROM builder as builder-intel-devtools
 
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
-    set -e \
-    && apt-get install -yq --no-install-recommends intel-hpckit-2023.2.0
-
-ENV ONEAPI_SETVARS_PATH="/opt/intel/oneapi/setvars.sh"
-
-ARG WITH_INTEL_ONEAPI_PYTHON=1
+# Python version
 ARG INTEL_ONEAPI_PYTHON_VERSION=2023.2.0-49420
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
-    INTEL_ONEAPI_PYTHON_VERSION="${INTEL_ONEAPI_PYTHON_VERSION:-}" \
-    [ "${WITH_INTEL_ONEAPI_PYTHON:-}" = 1 ] && { apt-get install -yq --no-install-recommends intel-oneapi-python"${INTEL_ONEAPI_PYTHON_VERSION:+=${INTEL_ONEAPI_PYTHON_VERSION}}" || exit 1; }
-
-# Program to get nproc divided by /x, installed at /usr/local/bin/getnproc :
-RUN <<-EOF
-    set -eE
-    cat <<-'ENDFILE' > /usr/local/bin/getnproc
-#!/bin/sh
-# shellcheck shell=sh
-nproc="$(nproc || grep -c '^processor[[:space:]]*:' /proc/cpuinfo || true)"
-nproc="${nproc:-1}"
-arg="${1:-/1}"
-case "${arg}" in
-    /[0-9]*) 
-        divisor="${arg#/}"
-        [ "${divisor}" -lt 1 ] && divisor=1
-        [ "${divisor}" -gt "${nproc}" ] && divisor=1
-        echo "$(( nproc / divisor ))"
-        ;;
-    [0-9]*) [ "${arg}" -lt 1 ] && arg=1
-            [ "${arg}" -gt "${nproc}" ] && arg="${nproc}"
-            echo "${arg}"
-        ;;
-    *) echo "${nproc}"
-        ;;
-esac
-ENDFILE
-    chmod +x /usr/local/bin/getnproc
-EOF
-
-# Set up build target directory and add to cmake prefixes
-ARG BUILT_DIR=/opt/built
-ENV BUILT_DIR="${BUILT_DIR}"
-RUN mkdir -p "${BUILT_DIR}/bin" "${BUILT_DIR}/share" && chmod -R a+rX "${BUILT_DIR}"
-# Disable ICC deprecation warning:
-ENV __INTEL_PRE_CFLAGS="${__INTEL_PRE_CFLAGS:+${__INTEL_PRE_CFLAGS} }-diag-disable=10441"
-FROM builder as build-apt-prerequisites
-ARG EIGEN_VERSION=3.4.0
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
-    <<-EOF
-    source "${ONEAPI_SETVARS_PATH}" >/dev/null 2>&1; ldconfig
-    apt-get install -yq --no-install-recommends \
-        libboost-dev \
-        libfreetype6-dev \
-        libftgl-dev \
-        libosmesa6-dev \
-        libqt5opengl5-dev \
-        libqwt-qt5-dev \
-        libglib2.0-dev \
-        libssl-dev \
-        qtbase5-dev \
-        zlib1g-dev \
+<<-EOF
+    { curl -fsSL https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS-2023.PUB | gpg --dearmor > /usr/share/keyrings/intel-oneapi-archive-keyring.gpg || exit 1; }
+    echo "deb [signed-by=/usr/share/keyrings/intel-oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main " > /etc/apt/sources.list.d/oneAPI.list
+    apt-get update -yq
+    apt-get install -yq "linux-headers-$(uname -r)" || true
+    apt-get install -yq intel-hpckit-2023.2.0 intel-oneapi-python"${INTEL_ONEAPI_PYTHON_VERSION:+=${INTEL_ONEAPI_PYTHON_VERSION}}"
+EOF
+
+# Install headers and libraries:
+FROM builder-intel-devtools as builder-prerequisites
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
+    apt-get update -yq && \
+    apt-get install -yq \
         freeglut3-dev \
         libarpack2-dev \
+        libboost-dev \
         libboost-math-dev \
         libboost-random-dev \
+        libeigen3-dev  \
         libfftw3-dev \
         libflann-dev \
+        libfreetype6-dev \
+        libftgl-dev \
+        libgl-dev \
+        libglib2.0-dev \
+        libglvnd-dev \
+        libglx-dev \
         libgtest-dev \
         libnifti-dev \
+        libosmesa6-dev \
         libpng-dev \
+        libqt5opengl5-dev \
+        libqwt-qt5-dev \
+        libssl-dev \
         libsuitesparse-dev \
+        mesa-utils \
+        qtbase5-dev \
         uuid-dev \
-        libglvnd-dev
-EOF
+        zlib1g-dev
 
-FROM build-apt-prerequisites as build-eigen        
+FROM builder-prerequisites as builder-build-environment
+# Set up build target directory and add to cmake prefixes
+
+ENV PIPELINE_NAME="${PIPELINE_NAME:-dhcp-pipeline}"
+ENV PIPELINE_ROOT="${PIPELINE_ROOT:-/opt/${PIPELINE_NAME}}"
+ENV PIPELINE_DIR="${PIPELINE_ROOT}/src/${PIPELINE_NAME}"
+ENV PIPELINE_DATA_DIR="${PIPELINE_DIR}/share/${PIPELINE_NAME}"    
+ENV ONEAPI_ROOT="${ONEAPI_ROOT:-/opt/intel/oneapi}"
+
+# Ooptimizer flags
+ARG INTEL_OPTIMIZER_FLAGS="-O3 -fp-model=precise -mavx -axCORE-AVX2,CORE-AVX512"
+ENV INTEL_OPTIMIZER_FLAGS="${INTEL_OPTIMIZER_FLAGS:-}"
+ARG NCPU
+ENV NCPU="${NCPU:-}"
+
+ARG COMPILERVARS_PATH=/usr/local/etc/compilervars.sh
+
+COPY --chmod=755 parameters/compilervars.sh "${COMPILERVARS_PATH}"
+
+WORKDIR "${PIPELINE_ROOT}"
+RUN mkdir -p "${PIPELINE_ROOT}/bin" "${PIPELINE_ROOT}/share" "${PIPELINE_DIR}" && chmod -R a+rX "${PIPELINE_ROOT}" "${PIPELINE_DIR}"
+RUN echo "${PIPELINE_ROOT}/lib" > /etc/ld.so.conf.d/dhcp-pipeline.conf
+
+
+FROM builder-build-environment as builder-vtk
+WORKDIR /opt/build/vtk
+ADD --keep-git-dir=true https://github.com/Kitware/VTK.git#release src
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
-WORKDIR /opt/build/eigen
 RUN <<-EOF
-        curl -fsSL -o src.tar.gz https://gitlab.com/libeigen/eigen/-/archive/${EIGEN_VERSION}/eigen-${EIGEN_VERSION}.tar.gz
-        mkdir -p src build
-        tar xf src.tar.gz --directory=src --strip-components=1
-        rm -rf src.tar.gz
-        cd build
-        source "${ONEAPI_SETVARS_PATH}" >/dev/null 2>&1; ldconfig
-        cmake \
-            -D CMAKE_INSTALL_PREFIX="${BUILT_DIR}" \
-            -D CMAKE_PREFIX_PATH="${BUILT_DIR}:${CMAKE_PREFIX_PATH:-}" \
-            -D CMAKE_C_COMPILER=icc \
-            -D CMAKE_CXX_COMPILER=icpc \
+    (cd src && git submodule update --init)
+    mkdir -p build && cd build
+    export __INTEL_POST_CFLAGS="-static-intel -ltbb -lstdc++ -lpthread -lm -ldl -Wno-unused-command-line-argument"
+
+    source "${COMPILERVARS_PATH}"
+
+    # Build with icx/icpx to avoid:
+    #   /opt/build/vtk/src/Common/Math/vtkFFT.txx(327): error: nontype "<unnamed>::ConstTupleReferenceType" is not a type name
+    #       using ConstTupleRef = decltype(resRange)::ConstTupleReferenceType;
+
+    cmake -GNinja -j "${NCPU}" \
+            -D CMAKE_INSTALL_PREFIX="${PIPELINE_ROOT}" \
+            -D CMAKE_PREFIX_PATH="${PIPELINE_ROOT}:${CMAKE_PREFIX_PATH:-}" \
+            -D CMAKE_C_COMPILER=icx \
+            -D CMAKE_CXX_COMPILER=icpx \
+            -D CMAKE_BUILD_TYPE=Release \
+            -D BUILD_SHARED_LIBS=ON \
+            -D VTK_BUILD_DOCUMENTATION=OFF \
+            -D VTK_OPENGL_HAS_OSMESA=ON \
+            -D VTK_USE_X=OFF \
+            -D OpenGL_GL_PREFERENCE=GLVND \
+            -D VTK_SMP_ENABLE_TBB=ON \
+            -D VTK_SMP_IMPLEMENTATION_TYPE=TBB \
             ../src
-        make install
-        cd ../
-        rm -rf src build
+            cmake --build .
+            cmake --install .
 EOF
 
-FROM build-eigen as build-vtk
-WORKDIR /opt/build/mirtk/vtk
-ARG VTK_VERSION=7.1.1
-ARG NCPU="/2"
-ARG ADD_INTEL_CFLAGS="-O3 -axCORE-AVX512,CORE-AVX2 -xAVX"
+FROM builder-vtk as builder-itk
+WORKDIR /opt/build/itk
+ADD --link --keep-git-dir=true https://github.com/InsightSoftwareConsortium/ITK.git#v5.3.0 src
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 RUN <<-EOF
-    VTK_RELEASE=`echo ${VTK_VERSION} | sed s/\.[0-9]*$//`
-    curl -L -o src.tar.gz http://www.vtk.org/files/release/${VTK_RELEASE}/VTK-${VTK_VERSION}.tar.gz
-    mkdir src build
-    tar xf src.tar.gz --directory=src --strip-components=1
-    rm src.tar.gz
+    (cd src && git submodule update --init --recursive)
+    mkdir -p build && cd build
+    export __INTEL_POST_CFLAGS="-static-intel -std=c++14"
 
-    cd build
-    source "${ONEAPI_SETVARS_PATH}" >/dev/null 2>&1; ldconfig
-    if [ -n "${NCPU:-}" ]; then
-        NCPU="$(getnproc "${NCPU:-/1}")"
-        NCPU="${NCPU:-1}"
-        echo "Using NCPU=\"${NCPU}\" cpus" >&2
-    fi
-    export __INTEL_POST_CFLAGS="${__INTEL_POST_CFLAGS:+${__INTEL_POST_CFLAGS} }${ADD_INTEL_CFLAGS}"
-
-    cmake \
-    -D CMAKE_INSTALL_PREFIX="${BUILT_DIR}" \
-    -D CMAKE_PREFIX_PATH="${BUILT_DIR}:${CMAKE_PREFIX_PATH:-}" \
-    -D CMAKE_C_COMPILER=icc \
-    -D CMAKE_CXX_COMPILER=icpc \
-    -D VTK_USE_SYSTEM_PNG=ON \
-    -D VTK_USE_SYSTEM_ZLIB=ON \
-    -D BUILD_SHARED_LIBS=ON \
-    -D BUILD_EXAMPLES=OFF \
-    -D BUILD_TESTING=OFF \
-    -D BUILD_DOCUMENTATION=OFF \
-    -D VTK_OPENGL_HAS_OSMESA=ON \
-    -S VTK_SMP_ENABLE_TBB=ON \
-    ../src
-    make -S ${NCPU:+-j "${NCPU}"}
-    make install
-    cd ../
-    rm -rf build src
-EOF
-
-FROM build-vtk as build-itk
-WORKDIR /opt/build/mirtk/itk
-ARG ITK_URL=https://github.com/InsightSoftwareConsortium/ITK/releases/download/v5.4rc01/InsightToolkit-5.4rc01.tar.gz
-ARG NCPU="/2"
-ARG ADD_INTEL_CFLAGS="-O3 -axCORE-AVX512,CORE-AVX2 -xAVX"
-SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
-RUN <<-EOF
-    curl -fL "${ITK_URL}" -o src.tar.gz
-    mkdir src build
-    tar xf src.tar.gz --directory=src --strip-components=1
-    rm src.tar.gz
-    cd build
-
-    source "${ONEAPI_SETVARS_PATH}" >/dev/null 2>&1; ldconfig
+    source "${COMPILERVARS_PATH}" 
     
-    if [ -n "${NCPU:-}" ]; then
-        NCPU="$(getnproc "${NCPU:-/1}")"
-        NCPU="${NCPU:-1}"
-        echo "Using NCPU=\"${NCPU}\" cpus" >&2
-    fi
-    export __INTEL_POST_CFLAGS="${__INTEL_POST_CFLAGS:+${__INTEL_POST_CFLAGS} }${ADD_INTEL_CFLAGS}"
-    
-    cmake \
+    cmake -GNinja -j "${NCPU}" \
         -D CMAKE_INSTALL_PREFIX="${BUILT_DIR}" \
         -D CMAKE_PREFIX_PATH="${BUILT_DIR}:${CMAKE_PREFIX_PATH:-}" \
         -D CMAKE_C_COMPILER=icc \
+        -D CMAKE_BUILD_TYPE=Release \
         -D CMAKE_CXX_COMPILER=icpc \
         -D BUILD_EXAMPLES=OFF \
         -D BUILD_SHARED_LIBS=ON \
         -D BUILD_TESTING=OFF \
         -D BUILD_DOCUMENTATION=OFF \
         -D ITK_USE_MKL=ON \
+        -D ITK_USE_TBB=ON \
         -D ITK_USE_SYSTEM_PNG=ON \
         -D ITK_USE_SYSTEM_ZLIB=ON \
-        ../src
-    make -S ${NCPU:+-j "${NCPU}"}
-    make install
-    cd ../
-    rm -rf build src
+        -D ITK_USE_SYSTEM_EIGEN=ON \
+        -D CMAKE_CXX_STANDARD=14 \
+        ../src || { cat -v CMakeFiles/*.log; exit 1; }
+        cmake --build .
+        cmake --install .
 EOF
 
-# FROM build-itk as build-atlases
-# ENV PIPELINE_DIR "${BUILT_DIR}/pipeline"
-# WORKDIR "${BUILT_DIR}/share"
-# ARG ATLASES_URL="https://biomedic.doc.ic.ac.uk/brain-development/downloads/dHCP/atlases-dhcp-structural-pipeline-v1.zip"
-# SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
-# RUN <<-EOF
-#     curl -fL -o atlases-dhcp-structural-pipeline-v1.zip "${ATLASES_URL}"
-#     unzip atlases-dhcp-structural-pipeline-v1.zip -d .
-#     rm atlases-dhcp-structural-pipeline-v1.zip
-# EOF
-
-FROM build-itk as build-mirtk-keep-src
+FROM builder-itk as builder-mirtk
 WORKDIR /opt/build/mirtk
-ARG NCPU="/2"
-ARG ADD_INTEL_CFLAGS="-O3 -axCORE-AVX512,CORE-AVX2 -xAVX"
+ADD --link --keep-git-dir=true https://github.com/BioMedIA/MIRTK.git src
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 RUN <<-EOF
-    source "${ONEAPI_SETVARS_PATH}" >/dev/null 2>&1; ldconfig
-
-    git clone --recursive -b dhcp-v1  https://github.com/BioMedIA/MIRTK.git src
     cd src
-    git reset --hard 078553da78ab449e12b877b2852ebcf5d10de7ba
-    git submodule update
-    (cd Packages/DrawEM && git checkout v1.2.1 &&  git checkout 33ed778 -- Atlases.cmake && echo 'include(Atlases.cmake)' >> CMakeLists.txt)
+    git submodule update --init --recursive
 
-    # Fix TBB build:
-    git checkout be86b02 -- CMake/Modules/FindTBB.cmake Modules/Common/src/Parallel.cc Modules/Common/include/mirtk/Parallel.h
+    # fix: TBB and VTK
+    git fetch origin master
+    git checkout 973ce2f -- \
+        CMake/Basis/BasisSettings.cmake \
+        CMake/Basis/CommonTools.cmake \
+        CMake/Basis/TargetTools.cmake \
+        CMake/Modules/CMakeLists.txt \
+        CMake/Modules/FindARPACK.cmake \
+        CMake/Modules/FindTBB.cmake \
+        CMake/Modules/mirtkTargetDependencies.cmake \
+        Modules/Common/include/mirtk/Parallel.h \
+        Modules/Common/include/mirtk/Vtk.h \
+        Modules/Common/include/mirtk/VtkMath.h \
+        Modules/Common/src/Parallel.cc \
+        Modules/PointSet/src/Triangle.cc
+
     sed -Ei 's/(^.*\bMIRTK_Common_EXPORT\b.*\btbb_scheduler.*$)/\/\/ \1/g' Modules/Common/include/mirtk/Parallel.h
     sed -Ei 's/(^.*tbb::task_scheduler_init.*$)/\/\/ \1/g' Modules/Common/include/mirtk/Parallel.h
     sed -Ei 's/(^.*tbb[/]task_scheduler_init.h.*$)/\/\/ \1/g' Modules/Common/include/mirtk/Parallel.h
-    
-    cd /opt/build/mirtk
-    mkdir build && cd build
-    
-    if [ -n "${NCPU:-}" ]; then
-        NCPU="$(getnproc "${NCPU:-/1}")"
-        NCPU="${NCPU:-1}"
-        echo "Using NCPU=\"${NCPU}\" cpus" >&2
-    fi
-    export __INTEL_POST_CFLAGS="${__INTEL_POST_CFLAGS:+${__INTEL_POST_CFLAGS} }${ADD_INTEL_CFLAGS}"
 
-    cmake \
-    -D CMAKE_INSTALL_PREFIX="${BUILT_DIR}" \
-    -D CMAKE_PREFIX_PATH="${BUILT_DIR}:${CMAKE_PREFIX_PATH:-}" \
-    -D CMAKE_C_COMPILER=icc \
-    -D CMAKE_CXX_COMPILER=icpc \
-    -D CMAKE_BUILD_TYPE=Release \
-    -D MODULE_Deformable=ON \
-    -D MODULE_DrawEM=ON \
-    -D WITH_VTK=ON \
-    -D WITH_TBB=ON \
-    -D WITH_ITK=ON \
-    -D VTK_DIR="${BUILT_DIR}" \
-    -D ITK_DIR="${BUILT_DIR}" \
-    ../src
-    make -S ${NCPU:+-j "${NCPU}"}
-    make install
+    cd ../
+    mkdir -p build && cd build
+
+    export __INTEL_POST_CFLAGS="-static-intel -std=c++14"
+    source "${COMPILERVARS_PATH}"    
+    
+    cmake -GNinja -j "${NCPU}" \
+            -D CMAKE_INSTALL_PREFIX="${PIPELINE_ROOT}" \
+            -D CMAKE_PREFIX_PATH="${PIPELINE_ROOT}:${CMAKE_PREFIX_PATH:-}" \
+            -D CMAKE_C_COMPILER=icc \
+            -D CMAKE_CXX_COMPILER=icpc \
+            -D CMAKE_BUILD_TYPE=Release \
+            -D BUILD_SHARED_LIBS=ON \
+            -D BUILD_DOCUMENTATION=OFF  \
+            -D BUILD_CHANGELOG=OFF \
+            -D MODULE_Deformable=ON \
+            -D MODULE_DrawEM=ON \
+            -D MODULE_Numerics=ON \
+            -D WITH_VTK=ON \
+            -D WITH_ITK=ON \
+            -D WITH_TBB=ON \
+            -D WITH_ARPACK=ON \
+            -D WITH_FLANN=ON \
+            -D WITH_MATLAB=OFF \
+            -D MIRTK_USE_SYSTEM_PNG=ON \
+            -D MIRTK_USE_SYSTEM_ZLIB=ON \
+            -D VTK_DIR="${PIPELINE_ROOT}" \
+            -D ITK_DIR="${PIPELINE_ROOT}" \
+            -D DEPENDS_VTK_DIR="${PIPELINE_ROOT}" \
+            -D DEPENDS_ITK_DIR="${PIPELINE_ROOT}" \
+        ../src
+        cmake --build .
+        cmake --install .
+        echo "${PIPELINE_ROOT}/lib/mirtk" > /etc/ld.so.conf.d/mirtk.conf
     cd ../
 EOF
+#cd Packages/DrawEM/atlases/src
+#unzip atlases-dhcp-structural-pipeline-v1.zip -d /opt/build/mirtk/build/Packages/DrawEM/atlases/src/atlases
+#rm atlases-dhcp-structural-pipeline-v1.zip
+#cd /opt/build/mirtk/build
+#make install
 
-FROM build-mirtk-keep-src as build-workbench
+FROM builder-build-environment as builder-workbench
 WORKDIR /opt/build/workbench
-ARG WORKBENCH_GIT_TAG=
-ARG NCPU="/2"
-ARG ADD_INTEL_CFLAGS="-O3 -axCORE-AVX512,CORE-AVX2 -xAVX"
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
+ADD --link --keep-git-dir=true https://github.com/Washington-University/workbench.git src
 RUN <<-EOF
-    mkdir src build 
-    WORKBENCH_URL_BASE='https://github.com/Washington-University/workbench/archive/refs'
-    WORKBENCH_GIT_TAG="${WORKBENCH_GIT_TAG:-}"
-    WORKBENCH_URL="${WORKBENCH_URL_BASE}/${WORKBENCH_GIT_TAG:+tags/${WORKBENCH_GIT_TAG}}${WORKBENCH_GIT_TAG:-heads/master}.tar.gz"
-    curl -L "${WORKBENCH_URL}" -o src.tar.gz
-    tar xf src.tar.gz --directory=src --strip-components=1
-    rm src.tar.gz
-
+    echo "Fixing icpc command line error: \"option '-openmp-link=static' is not supported. Please use the replacement option '-qopenmp-link=static'\"" >&2 \
+    sed --in-place -E 's/-openmp-link=static/-qopenmp-link=static/g' src/src/CMakeLists.txt
+    
     # Modify Intel compiler name match to include icpx, the new Intel CPP compiler:
     sed --in-place -E '/^IF.*icpc/,/^ENDIF.*MATCHES.*icpc.*/ s/^.*ADD_DEF.*Wall.*/#/; s/\*icpc\$/*icp[cx]\$/g; s/-Wall/-Wno-inconsistent-missing-override -Wno-unused-command-line-argument/g' src/src/CMakeLists.txt
 
-    # Fix icpc: command line error: option '-openmp-link=static' is not supported. Please use the replacement option '-qopenmp-link=static'
-    sed --in-place -E 's/-openmp-link=static/-qopenmp-link=static/g' src/src/CMakeLists.txt
-    
-    cd build
-    
-    source "${ONEAPI_SETVARS_PATH}" >/dev/null 2>&1; ldconfig
+    mkdir -p build && cd build
+    export __INTEL_POST_CFLAGS="${__INTEL_POST_CFLAGS:-} -std=c++11"
+    source "${COMPILERVARS_PATH}"    
 
-    if [ -n "${NCPU:-}" ]; then
-        NCPU="$(getnproc "${NCPU:-/1}")"
-        NCPU="${NCPU:-1}"
-        echo "Using NCPU=\"${NCPU}\" cpus" >&2
-    fi
-    export __INTEL_POST_CFLAGS="${__INTEL_POST_CFLAGS:+${__INTEL_POST_CFLAGS} }-std=c++14 ${ADD_INTEL_CFLAGS}"        
-    cmake \
-        -D CMAKE_INSTALL_PREFIX="${BUILT_DIR}" \
-        -D CMAKE_PREFIX_PATH="${BUILT_DIR}:${CMAKE_PREFIX_PATH:-}" \
+    cmake -GNinja -j "${NCPU}" \
         -D CMAKE_C_COMPILER=icc \
         -D CMAKE_CXX_COMPILER=icpc \
+        -D CLANG_FLAG=TRUE \
         -D CMAKE_BUILD_TYPE=Release \
         -D WORKBENCH_MESA_DIR=/usr \
         -D WORKBENCH_USE_QT5=TRUE \
-        -D WORKBENCH_USE_SIMD=TRUE \
-        -D CMAKE_CXX_STANDARD=14 \
+        -D WORKBENCH_USE_SIMD=TRUE  \
+        -D CMAKE_CXX_STANDARD=11 \
         -D CMAKE_CXX_STANDARD_REQUIRED=ON \
+        -D CMAKE_CXX_EXTENSIONS=OFF \
         ../src/src
-    make -S ${NCPU:+-j "${NCPU}"}
-    make test
-    make install
-    cd /opt/build/workbench
-    rm -rf build src
+    cmake --build .
+    cmake --install .
 EOF
 
-FROM build-workbench as build-fsl
+FROM builder-workbench as builder-fsl
+ARG FSL_CONDA_ENV=fsl
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 RUN <<-EOF
-    source "${ONEAPI_SETVARS_PATH}" >/dev/null 2>&1; ldconfig
-    conda config --append channels https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/
+    export __INTEL_POST_CFLAGS="${__INTEL_POST_CFLAGS:-} -std=c++11"
+    source "${COMPILERVARS_PATH}"    
+    conda config --append channels https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public
     conda config --append channels conda-forge
-    conda install -y --verbose -n base fsl-avwutils
+    conda install -y --verbose -n "${FSL_CONDA_ENV}" fsl-avwutils
     conda clean --all -y
     FSLBINS="$(command -v fslmaths || true)"
-    [[ -n "${FSLBINS:-}" ]] || { echo "No fslmaths found" >&2; exit 1; }
+    test -n "${FSLBINDS:-}"
     FSLDIR="${FSLBINS%/*/*}"
-    [[ -n "${FSLBINS:-}" ]] || { echo "Could not set FSLDIR from \"${FSLBINS}\"" >&2; exit 1; }
 	mkdir -p /etc/fsl
-	echo "FSLDIR=\"${FSLDIR}\"; . \${FSLDIR}/etc/fslconf/fsl.sh; export FSLDIR" > /etc/fsl/fsl.sh 
+	echo "export FSLDIR=\"${FSLDIR}\"; . \${FSLDIR}/etc/fslconf/fsl.sh" > "${PIPELINE_ROOT}/etc/fsl.sh"
 EOF
 
-
-FROM build-fsl as build-pipeline
+FROM builder-fsl as builder-pipeline
 WORKDIR "/opt/build/pipeline"
 COPY --chmod=a+rX dhcp-pipeline.sh version "${PIPELINE_DIR}"/
 COPY --chmod=a+rX parameters "${PIPELINE_DIR}"/parameters
 COPY --chmod=a+rX scripts "${PIPELINE_DIR}"/scripts
-COPY --chmod=a+rX version CMakeLists.txt CHANGES.txt ./
-COPY --chmod=a+rX applications ./applications
-COPY --chmod=a+rX ThirdParty ./ThirdParty
-ARG NCPU="/2"
-ARG ADD_INTEL_CFLAGS="-O3 -axCORE-AVX512,CORE-AVX2 -xAVX"
+COPY --chmod=a+rX version CMakeLists.txt CHANGES.txt ./src
+COPY --chmod=a+rX applications ./src/applications
+COPY --chmod=a+rX ThirdParty ./src/ThirdParty
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 RUN <<-EOF
-    source "${ONEAPI_SETVARS_PATH}" >/dev/null 2>&1; ldconfig
-    if [ -n "${NCPU:-}" ]; then
-        NCPU="$(getnproc "${NCPU:-/1}")"
-        NCPU="${NCPU:-1}"
-        echo "Using NCPU=\"${NCPU}\" cpus" >&2
-    fi
-    export __INTEL_POST_CFLAGS="${__INTEL_POST_CFLAGS:+${__INTEL_POST_CFLAGS} }${ADD_INTEL_CFLAGS}"
-    mkdir build && cd build
-    cmake \
-        -D CMAKE_INSTALL_PREFIX="${BUILT_DIR}" \
-        -D CMAKE_PREFIX_PATH="${BUILT_DIR}:${CMAKE_PREFIX_PATH:-}" \
-        -D CMAKE_C_COMPILER=icc \
-        -D CMAKE_CXX_COMPILER=icpc \
-        -D CMAKE_BUILD_TYPE=Release \
-        -D MODULE_Deformable=ON \
-        -D MODULE_DrawEM=ON \
-        -D WITH_VTK=ON \
-        -D WITH_TBB=ON \
-        -D WITH_ITK=ON \
-        -D VTK_DIR="${BUILT_DIR}" \
-        -D ITK_DIR="${BUILT_DIR}" \
-        -D MIRTK_DIR="${BUILT_DIR}" \
+    export __INTEL_POST_CFLAGS="${__INTEL_POST_CFLAGS:-} -std=c++11"
+    source "${COMPILERVARS_PATH}"    
+    cmake -GNinja -j "${NCPU}" \
+            -D CMAKE_INSTALL_PREFIX="${PIPELINE_ROOT}" \
+            -D CMAKE_PREFIX_PATH="${PIPELINE_ROOT}:${CMAKE_PREFIX_PATH:-}" \
+            -D CMAKE_C_COMPILER=icc \
+            -D CMAKE_CXX_COMPILER=icpc \
+            -D CMAKE_BUILD_TYPE=Release \
+            -D BUILD_SHARED_LIBS=ON \
+            -D MODULE_Deformable=ON \
+            -D MODULE_DrawEM=ON \
+            -D WITH_VTK=ON \
+            -D WITH_TBB=ON \
+            -D WITH_ITK=ON \
+            -D VTK_DIR="${PIPELINE_ROOT}" \
+            -D ITK_DIR="${PIPELINE_ROOT}" \
+            -D MIRTK_DIR="${PIPELINE_ROOT}" \
         ../src
-    make -S ${NCPU:+-j "${NCPU}"}
+    cmake --build .
+    cmake --install .
     install -v -Dm755 bin/*  /opt/built/bin/
     install -v -Dm766
+    cd ../
+EOF
 #    echo "export DRAWEMDIR=$DRAWEMDIR" >> $code_dir/parameters/path.sh
 #    echo "export DRAWEMDIR=$DRAWEMDIR" >> $code_dir/parameters/path.sh
 #    echo "export PATH=$pathext:"'${PATH}' >> $code_dir/parameters/path.sh
-    cd /opt/build/pipeline
-EOF
 
-# FROM workbench-source as workbench-builder-gcc
-# WORKDIR /opt/build/workbench
-# ARG NCPU="/2"
-# ARG ADD_GCC_CFLAGS="-O3 -march=skylake-avx512"
+# FROM builder-itk as builder-atlases
+# WORKDIR "${PIPELINE_DIR}"
+# ARG ATLASES_URL="https://biomedic.doc.ic.ac.uk/brain-development/downloads/dHCP/atlases-dhcp-structural-pipeline-v1.zip"
 # SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
-# RUN <<-EOF    
-#     mkdir -p build && cd build
-    
-#     source "${ONEAPI_SETVARS_PATH}" >/dev/null 2>&1; ldconfig
-#     export CMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}:/usr:/usr/local"
-#     if [ -n "${NCPU:-}" ]; then
-#         NCPU="$(getnproc "${NCPU:-/1}")"
-#         NCPU="${NCPU:-1}"
-#         echo "Using NCPU=\"${NCPU}\" cpus" >&2
-#     fi
-    
-#     cmake \
-#         -D CMAKE_INSTALL_PREFIX="${BUILT_DIR}" \
-#         -D CMAKE_C_COMPILER=gcc-9 \
-#         -D CMAKE_CXX_COMPILER=g++-9 \
-#         -D CMAKE_BUILD_TYPE=Release \
-#         -D WORKBENCH_MESA_DIR=/usr \
-#         -D WORKBENCH_USE_QT5=TRUE \
-#         -D WORKBENCH_USE_SIMD=TRUE  \
-#         -D CMAKE_CFLAGS="${ADD_GCC_CFLAGS}" \
-#         -D CMAKE_CXX_FLAGS="${ADD_GCC_CFLAGS}" \
-#         ../workbench/src
-#     make -S ${NCPU:+-j "${NCPU}"}
-#     make test || echo "Could not run test!"
-#     cd /opt/build/workbench
+# RUN <<-EOF
+#     mkdir -p atlases && cd atlases
+#     aria2c -x 4 -s 2 --out=atlases.zip "${ATLASES_URL}"
+#     unzip atlases-dhcp-structural-pipeline-v1.zip -d .
+#     rm atlases-dhcp-structural-pipeline-v1.zip
 # EOF
-
-
-# ARG INTEL_CFLAGS="-O3 -axCORE-AVX512,CORE-AVX2 -xAVX"
-# export __INTEL_POST_CFLAGS="${__INTEL_POST_CFLAGS:+${__INTEL_POST_CFLAGS} }${INTEL_CFLAGS:-}"
-# cmake \
-#     -D CMAKE_INSTALL_PREFIX="${BUILT_DIR}" \
-#     -D CMAKE_C_COMPILER=icc \
-#     -D CMAKE_CXX_COMPILER=icpc \
-#     -D CMAKE_BUILD_TYPE=Release \
-#     -D WORKBENCH_MESA_DIR=/usr \
-#     -D WORKBENCH_USE_QT5=TRUE \
-#     -D WORKBENCH_USE_SIMD=TRUE \
-#     -D CMAKE_CXX_STANDARD=11 \
-#     -D CMAKE_CXX_STANDARD_REQUIRED=ON \
-#     -D CMAKE_CXX_EXTENSIONS=OFF \
-#     -D CMAKE_CXX_FLAGS='-std=c++11' \
-#     ../workbench/src    
-# make -S ${NCPU:-}
-
-
