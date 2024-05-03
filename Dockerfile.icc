@@ -282,6 +282,29 @@ RUN <<-EOF
     cmake --install .
 EOF
 
+FROM builder-workbench as builder-sphericalmesh
+WORKDIR /opt/build/sphericalmesh
+SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
+ADD --link --keep-git-dir=true https://github.com/amakropoulos/SphericalMesh.git#dhcp-v1.2 src
+RUN <<-EOF
+    mkdir -p build && cd build
+    export __INTEL_POST_CFLAGS="-std=gnu++0x -static-intel -Wno-unused-command-line-argument"
+
+    source "${COMPILERVARS_PATH}"
+    ldconfig
+
+    cmake -GNinja -j "${NCPU}" \
+        -D CMAKE_C_COMPILER=icc \
+        -D CMAKE_CXX_COMPILER=icpc \
+        -D CMAKE_BUILD_TYPE=Release \
+        -D VTK_DIR="${PIPELINE_ROOT}" \
+        -D ITK_DIR="${PIPELINE_ROOT}" \
+        -D MIRTK_DIR="${PIPELINE_ROOT}" \
+        ../src/src
+    cmake --build .
+    cmake --install .
+EOF
+
 FROM builder-workbench as builder-fsl
 ARG FSL_CONDA_ENV=fsl
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
@@ -298,6 +321,8 @@ RUN <<-EOF
 	mkdir -p /etc/fsl
 	echo "export FSLDIR=\"${FSLDIR}\"; . \${FSLDIR}/etc/fslconf/fsl.sh" > "${PIPELINE_ROOT}/etc/fsl.sh"
 EOF
+
+
 
 FROM builder-fsl as builder-pipeline
 WORKDIR "/opt/build/pipeline"
