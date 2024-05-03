@@ -185,42 +185,43 @@ RUN <<-EOF
         cmake --install .
 EOF
 
-FROM builder-itk as builder-mirtk
+FROM builder-itk as builder-mirtk-prerequisites
+WORKDIR /opt/build/mirtk
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
+    apt-get update -yq && apt-get install -yq liblz4-dev libcilkrts5 && ldconfig
+
+FROM builder-mirtk-prerequisites as builder-mirtk
 WORKDIR /opt/build/mirtk
 ADD --link --keep-git-dir=true https://github.com/BioMedIA/MIRTK.git src
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 RUN <<-EOF
     cd src
+    git log -1
     git submodule update --init --recursive
 
-    # fix: TBB and VTK
-    git fetch origin master
-    git checkout 973ce2f -- \
-        CMake/Basis/BasisSettings.cmake \
-        CMake/Basis/CommonTools.cmake \
-        CMake/Basis/TargetTools.cmake \
-        CMake/Modules/CMakeLists.txt \
-        CMake/Modules/FindARPACK.cmake \
-        CMake/Modules/FindTBB.cmake \
-        CMake/Modules/mirtkTargetDependencies.cmake \
-        Modules/Common/include/mirtk/Parallel.h \
-        Modules/Common/include/mirtk/Vtk.h \
-        Modules/Common/include/mirtk/VtkMath.h \
-        Modules/Common/src/Parallel.cc \
-        Modules/PointSet/src/Triangle.cc
-
+    # fix: TBB
     sed -Ei 's/(^.*\bMIRTK_Common_EXPORT\b.*\btbb_scheduler.*$)/\/\/ \1/g' Modules/Common/include/mirtk/Parallel.h
     sed -Ei 's/(^.*tbb::task_scheduler_init.*$)/\/\/ \1/g' Modules/Common/include/mirtk/Parallel.h
     sed -Ei 's/(^.*tbb[/]task_scheduler_init.h.*$)/\/\/ \1/g' Modules/Common/include/mirtk/Parallel.h
 
+    echo "set(CMAKE_INSTALL_OPENMP_LIBRARIES FALSE)" >> CMakeLists.txt
+    
+    echo 'find_library(LZ4_LIBRARIES NAMES libvtklz4-9.3.so HINTS "lz4/lib")' >> CMakeLists.txt
+    echo 'link_libraries(${LZ4_LIBRARIES})' >> CMakeLists.txt
+    echo 'add_definitions(${LZ4_DEFINITIONS})' >> CMakeLists.txt
+
     cd ../
     mkdir -p build && cd build
+    export __INTEL_POST_CFLAGS="-static-intel -std=c++14 -llz4"
 
-    export __INTEL_POST_CFLAGS="-static-intel -std=c++14"
     source "${COMPILERVARS_PATH}"    
+    export CMAKE_INSTALL_OPENMP_LIBRARIES=FALSE
     
     cmake -GNinja -j "${NCPU}" \
             -D CMAKE_INSTALL_PREFIX="${PIPELINE_ROOT}" \
+            -D CMAKE_INSTALL_OPENMP_LIBRARIES=FALSE \
             -D CMAKE_PREFIX_PATH="${PIPELINE_ROOT}:${CMAKE_PREFIX_PATH:-}" \
             -D CMAKE_C_COMPILER=icc \
             -D CMAKE_CXX_COMPILER=icpc \
@@ -230,15 +231,12 @@ RUN <<-EOF
             -D BUILD_CHANGELOG=OFF \
             -D MODULE_Deformable=ON \
             -D MODULE_DrawEM=ON \
-            -D MODULE_Numerics=ON \
             -D WITH_VTK=ON \
             -D WITH_ITK=ON \
             -D WITH_TBB=ON \
-            -D WITH_ARPACK=ON \
             -D WITH_FLANN=ON \
             -D WITH_MATLAB=OFF \
             -D MIRTK_USE_SYSTEM_PNG=ON \
-            -D MIRTK_USE_SYSTEM_ZLIB=ON \
             -D VTK_DIR="${PIPELINE_ROOT}" \
             -D ITK_DIR="${PIPELINE_ROOT}" \
             -D DEPENDS_VTK_DIR="${PIPELINE_ROOT}" \
