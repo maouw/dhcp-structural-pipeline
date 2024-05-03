@@ -247,13 +247,9 @@ RUN <<-EOF
         echo "${PIPELINE_ROOT}/lib/mirtk" > /etc/ld.so.conf.d/mirtk.conf
     cd ../
 EOF
-#cd Packages/DrawEM/atlases/src
-#unzip atlases-dhcp-structural-pipeline-v1.zip -d /opt/build/mirtk/build/Packages/DrawEM/atlases/src/atlases
-#rm atlases-dhcp-structural-pipeline-v1.zip
-#cd /opt/build/mirtk/build
-#make install
 
-FROM builder-build-environment as builder-workbench
+
+FROM builder-mirtk as builder-workbench
 WORKDIR /opt/build/workbench
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 ADD --link --keep-git-dir=true https://github.com/Washington-University/workbench.git src
@@ -265,20 +261,22 @@ RUN <<-EOF
     sed --in-place -E '/^IF.*icpc/,/^ENDIF.*MATCHES.*icpc.*/ s/^.*ADD_DEF.*Wall.*/#/; s/\*icpc\$/*icp[cx]\$/g; s/-Wall/-Wno-inconsistent-missing-override -Wno-unused-command-line-argument/g' src/src/CMakeLists.txt
 
     mkdir -p build && cd build
-    export __INTEL_POST_CFLAGS="${__INTEL_POST_CFLAGS:-} -std=c++11"
+    export __INTEL_POST_CFLAGS="-std=c++11 -Wno-c++11-narrowing -Wno-inconsistent-missing-override -static-intel -Wno-unused-command-line-argument"
+
     source "${COMPILERVARS_PATH}"    
 
     cmake -GNinja -j "${NCPU}" \
-        -D CMAKE_C_COMPILER=icc \
-        -D CMAKE_CXX_COMPILER=icpc \
-        -D CLANG_FLAG=TRUE \
-        -D CMAKE_BUILD_TYPE=Release \
-        -D WORKBENCH_MESA_DIR=/usr \
-        -D WORKBENCH_USE_QT5=TRUE \
-        -D WORKBENCH_USE_SIMD=TRUE  \
+        -D CMAKE_C_COMPILER=icx \
+        -D CMAKE_CXX_COMPILER=icpx \
         -D CMAKE_CXX_STANDARD=11 \
         -D CMAKE_CXX_STANDARD_REQUIRED=ON \
         -D CMAKE_CXX_EXTENSIONS=OFF \
+        -D CMAKE_BUILD_TYPE=Release \
+        -D WORKBENCH_MESA_DIR=/usr \
+        -D WORKBENCH_USE_QT5=TRUE \
+        -D OpenGL_GL_PREFERENCE=GLVND \
+        -D WORKBENCH_USE_QT5_QOPENGL_WIDGET=TRUE \
+        -D WORKBENCH_USE_SIMD=TRUE  \
         ../src/src
     cmake --build .
     cmake --install .
@@ -349,3 +347,8 @@ EOF
 #     unzip atlases-dhcp-structural-pipeline-v1.zip -d .
 #     rm atlases-dhcp-structural-pipeline-v1.zip
 # EOF
+#cd Packages/DrawEM/atlases/src
+#unzip atlases-dhcp-structural-pipeline-v1.zip -d /opt/build/mirtk/build/Packages/DrawEM/atlases/src/atlases
+#rm atlases-dhcp-structural-pipeline-v1.zip
+#cd /opt/build/mirtk/build
+#make install
