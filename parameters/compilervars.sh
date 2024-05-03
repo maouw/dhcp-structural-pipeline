@@ -1,24 +1,24 @@
 #!/bin/sh
 # Set up build target directory and add to cmake prefixes
 _oldflags="$-"; set +x
-export PIPELINE_NAME="${PIPELINE_NAME:-dhcp-pipeline}"
-export PIPELINE_ROOT="${PIPELINE_ROOT:-/opt/${PIPELINE_NAME}}"
-export PIPELINE_DIR="${PIPELINE_ROOT}/src/${PIPELINE_NAME}"
-export PIPELINE_CONFIG_PATH="${PIPELINE_DIR}/etc/${PIPELINE_NAME}.conf.sh"
-export PIPELINE_DATA_DIR="${PIPELINE_DIR}/share/${PIPELINE_NAME}"
-[ -f "${ONEAPI_ROOT:-/opt/intel/oneapi}/setvars.sh" ] || { echo "ERROR: Could not find \"${ONEAPI_ROOT:-/opt/intel/oneapi}/setvars.sh\"." >&2; exit 1; }
-. "${ONEAPI_ROOT:-/opt/intel/oneapi}/setvars.sh"
+ONEAPI_ROOT="${ONEAPI_ROOT:-/opt/intel/oneapi}"
+INTEL_OPTIMIZER_FLAGS="${INTEL_OPTIMIZER_FLAGS:--O3 -fp-model=precise -mavx -axCORE-AVX2,CORE-AVX512}"
 
-export CPATH="${PIPELINE_ROOT}/include:${CPATH}"
-export LIBRARY_PATH="${PIPELINE_ROOT}/lib:${LIBRARY_PATH}"
-export LD_LIBRARY_PATH="${PIPELINE_ROOT}/lib:${LD_LIBRARY_PATH}"
-export PKG_CONFIG_PATH="${PIPELINE_ROOT}/share/pkgconfig:${PKG_CONFIG_PATH}"
+ICC_COMPILER_VER=2023.2.0
+
+[ -r "${ONEAPI_ROOT}/compiler/${ICC_COMPILER_VER}/env/vars.sh" ] && . "${ONEAPI_ROOT}/compiler/${ICC_COMPILER_VER}/env/vars.sh"
+. "${ONEAPI_ROOT}/setvars.sh"
+
+
+export CPATH="/opt/dhcp/include:${CPATH}"
+export LIBRARY_PATH="/opt/dhcp/lib:${LIBRARY_PATH}"
+export PKG_CONFIG_PATH="/opt/dhcp/share/pkgconfig:${PKG_CONFIG_PATH}"
 
 # Static flags for build:
 ldconfig
 
 # Disable ICC deprecation warning and "targeted for automatic cpu dispatch" warning:
-export __INTEL_PRE_CFLAGS="${__INTEL_PRE_CFLAGS:+${__INTEL_PRE_CFLAGS:-} }-diag-disable=10441 -diag-disable=15009 -diag-disable=10006 -diag-disable=10370"
+export __INTEL_PRE_CFLAGS="${__INTEL_PRE_CFLAGS:+${__INTEL_PRE_CFLAGS:-} }-diag-disable=10441 -diag-disable=15009 -diag-disable=10006 -diag-disable=10370 -diag-disable=10148"
 
 # Set optimizer flags
 export __INTEL_POST_CFLAGS="${INTEL_OPTIMIZER_FLAGS:-}${__INTEL_POST_CFLAGS:+ ${__INTEL_POST_CFLAGS:-}}"
@@ -32,6 +32,7 @@ NCPU="${NCPU:-0}"
 [ "${NCPU}" -gt "${total_nproc}" ] && NCPU=0
 [ "${NCPU}" -le 0 ] && NCPU="$((total_nproc - 1 ))"
 [ "${NCPU}" -le 0 ] && NCPU=1
+export CMAKE_BUILD_PARALLEL_LEVEL="${NCPU}"
 
 echo "INFO: Using ${NCPU} cpus" >&2
 echo "INFO: Using INTEL_OPTIMIZER_FLAGS=\"${INTEL_OPTIMIZER_FLAGS:-}\"" >&2
