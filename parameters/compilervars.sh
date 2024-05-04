@@ -4,12 +4,6 @@ _oldflags="$-"; set +x
 ONEAPI_ROOT="${ONEAPI_ROOT:-/opt/intel/oneapi}"
 INTEL_OPTIMIZER_FLAGS="${INTEL_OPTIMIZER_FLAGS:--O3 -fp-model=precise -mavx -axCORE-AVX2,CORE-AVX512}"
 
-ICC_COMPILER_VER=2023.2.0
-
-[ -r "${ONEAPI_ROOT}/compiler/${ICC_COMPILER_VER}/env/vars.sh" ] && . "${ONEAPI_ROOT}/compiler/${ICC_COMPILER_VER}/env/vars.sh"
-. "${ONEAPI_ROOT}/setvars.sh"
-
-
 export CPATH="/opt/dhcp/include:${CPATH}"
 export LIBRARY_PATH="/opt/dhcp/lib:${LIBRARY_PATH}"
 export PKG_CONFIG_PATH="/opt/dhcp/share/pkgconfig:${PKG_CONFIG_PATH}"
