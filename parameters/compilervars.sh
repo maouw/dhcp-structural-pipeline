@@ -2,7 +2,9 @@
 # Set up build target directory and add to cmake prefixes
 _oldflags="$-"; set +x
 ONEAPI_ROOT="${ONEAPI_ROOT:-/opt/intel/oneapi}"
-INTEL_OPTIMIZER_FLAGS="${INTEL_OPTIMIZER_FLAGS:--O3 -fp-model=precise -mavx -axCORE-AVX2,CORE-AVX512}"
+INTEL_OPTIMIZER_FLAGS="${INTEL_OPTIMIZER_FLAGS:-"-O3 -fp-model=precise -axCORE-AVX2,SKYLAKE-AVX512 -qopt-zmm-usage=high"}"
+
+. "${ONEAPI_ROOT}/setvars.sh" >/dev/null
 
 export CPATH="/opt/dhcp/include:${CPATH}"
 export LIBRARY_PATH="/opt/dhcp/lib:${LIBRARY_PATH}"

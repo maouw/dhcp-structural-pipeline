@@ -9,7 +9,6 @@ ENV TZ=UTC \
     LANGUAGE=en_US:en \
     LC_ALL=C.UTF-8 \
     LANG=C.UTF-8 \
-    DEBIAN_FRONTEND=noninteractive \
     APT_KEY_DONT_WARN_ON_DANGEROUS_USAGE=1
 
 # Force apt to leave downloaded binaries in /var/cache/apt (massively speeds up Docker builds)
@@ -19,18 +18,22 @@ RUN rm -f /etc/apt/apt.conf.d/docker-clean; echo 'Binary::apt::APT::Keep-Downloa
 RUN echo 'Acquire::Queue-Mode "host";' > /etc/apt/apt.conf.d/99queue
 
 # Install tools:
+SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
-    apt-get update -yq && \
+<<-EOF
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -qq && \
     apt-get install -yq --no-install-recommends \
-        apt-utils \
         bc \
         ca-certificates \
         curl \
         git \
         git-lfs \
+        gpg \
         gpg-agent \
+        gzip \
         less \
         lz4 \
         moreutils \
@@ -39,10 +42,21 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         openssh-client \
         pkg-config \
         shared-mime-info \
-        software-properties-common \
+        tar \
         time \
         unzip \
         wget
+    
+    apt-get -yq install parallel
+
+    { curl -fsSL https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS-2023.PUB | gpg --dearmor > /usr/share/keyrings/intel-oneapi-archive-keyring.gpg || exit 1; }
+    echo "deb [signed-by=/usr/share/keyrings/intel-oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main " > /etc/apt/sources.list.d/oneAPI.list
+
+    test -f /usr/share/doc/kitware-archive-keyring/copyright || wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null
+    echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ focal main' | tee /etc/apt/sources.list.d/kitware.list >/dev/null
+
+    apt-get update -qq
+EOF
 
 FROM base as builder-tools
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
@@ -50,6 +64,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
 <<-EOF
+    export DEBIAN_FRONTEND=noninteractive
     apt-get install -yq \
         build-essential \
         cmake \
@@ -64,20 +79,19 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
 <<-EOF
-    { curl -fsSL https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS-2023.PUB | gpg --dearmor > /usr/share/keyrings/intel-oneapi-archive-keyring.gpg || exit 1; }
-    echo "deb [signed-by=/usr/share/keyrings/intel-oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main " > /etc/apt/sources.list.d/oneAPI.list
-    apt-get update -yq
+    export DEBIAN_FRONTEND=noninteractive
     apt-get install -yq intel-hpckit-2023.2.0
-    apt-get install -yq intel-oneapi-mkl-devel 
     apt-get install -yq intel-oneapi-python=2023.2.0-49420
 EOF
 
 # Install headers and libraries:
 FROM builder-intel as builder-headers
+SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
-    apt-get update -yq && \
+<<-EOF
+    export DEBIAN_FRONTEND=noninteractive
     apt-get install -yq --no-install-recommends \
         freeglut3-dev \
         libarpack2-dev \
@@ -86,19 +100,26 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         libboost-random-dev \
         libcilkrts5 \
         libcoarrays-openmpi-dev \
+        libdcmtk-dev \
+        libdouble-conversion-dev \
         libeigen3-dev  \
+        libexpat-dev \
         libfftw3-dev \
         libflann-dev \
         libfreetype6-dev \
         libftgl-dev \
+        libgdcm-dev \
         libgl-dev \
+        libglew-dev \
         libglib2.0-dev \
         libglvnd-dev \
         libglx-dev \
         libgtest-dev \
         libhdf5-dev \
-        liblz4-dev \
         libjpeg-dev \
+        libjsoncpp-dev \
+        liblz4-dev \
+        libminc-dev \
         libnetcdf-dev \
         libnifti-dev \
         libosmesa6-dev \
@@ -108,10 +129,12 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         libqwt-qt5-dev \
         libssl-dev \
         libsuitesparse-dev \
+        libxml2-dev \
         mesa-utils \
         qtbase5-dev \
         uuid-dev \
         zlib1g-dev
+EOF
 
 FROM builder-headers as builder-environment
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
@@ -130,31 +153,30 @@ WORKDIR /opt/build/vtk
 ADD --link --keep-git-dir=true https://github.com/Kitware/VTK.git#v8.2.0 src
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 RUN <<-EOF
-    (cd src; git submodule update --init --recursive; git fetch --depth 1 origin tag v9.3.0; git checkout v9.3.0 -- CMake/FindTBB.cmake;)
-    set +x
-    source /opt/intel/oneapi/setvars.sh
-    set -x
+    (cd src; git submodule update --init --recursive;)
+
     mkdir -p build && cd build
+
+    export MKLROOT="$(source /opt/intel/oneapi/setvars.sh >/dev/null 2>&1; echo "${MKLROOT:-}")"
     export __INTEL_POST_CFLAGS="-std=c++11 -L${MKLROOT}/lib/intel64 -lmkl_intel_lp64 -lmkl_intel_thread -lmkl_core -liomp5 -lpthread -lm -ldl"
+
+    export __INTEL_POST_CFLAGS="-std=c++11"
     source "/opt/dhcp/etc/compilervars.sh" 
 
     cmake -Wno-dev -GNinja \
-            -D CMAKE_INSTALL_PREFIX="/opt/dhcp" \
-            -D CMAKE_PREFIX_PATH="/opt/dhcp:${CMAKE_PREFIX_PATH:-}" \
+            -D BUILD_SHARED_LIBS=ON \
+            -D BUILD_TESTING=ON \
+            -D BUILD_DOCUMENTATION=OFF \
             -D CMAKE_BUILD_TYPE=Release \
-            \
             -D CMAKE_C_COMPILER=icc \
             -D CMAKE_CXX_COMPILER=icpc \
-            \
+            -D CMAKE_CXX_EXTENSIONS=OFF \
             -D CMAKE_CXX_STANDARD_REQUIRED=ON \
             -D CMAKE_CXX_STANDARD=11 \
-            -D CMAKE_CXX_EXTENSIONS=OFF \
-            \
-            -D BUILD_SHARED_LIBS=ON \
-            \
-            -D OpenGL_GL_PREFERENCE=GLVND \
-            \
+            -D CMAKE_INSTALL_PREFIX="/opt/dhcp" \
+            -D CMAKE_PREFIX_PATH="/opt/dhcp:${CMAKE_PREFIX_PATH:-}" \
             -D EIGEN_USE_MKL=ON \
+            -D EIGEN_USE_MKL_VML=ON \
             -D Module_vtkCommonCore=ON \
             -D Module_vtkCommonDataModel=ON \
             -D Module_vtkCommonExecutionModel=ON \
@@ -175,28 +197,25 @@ RUN <<-EOF
             -D Module_vtkIOPLY=ON \
             -D Module_vtkIOXML=ON \
             -D Module_vtkParallelCore=ON \
-            -D Module_vtkRenderingCore=ON \
-            -D Module_vtkRenderingVolumeOpenGL2=ON \
-            -D Module_vtkTestingCore=ON \
             -D VTK_BUILD_DOCUMENTATION=OFF \
             -D VTK_BUILD_TESTING=ON \
-            -D VTK_Group_Imaging=ON \
             -D VTK_Group_Qt=OFF \
+            -D VTK_Group_Rendering=OFF \
             -D VTK_Group_StandAlone=OFF \
             -D VTK_Group_Web=OFF \
-            -D VTK_OPENGL_HAS_OSMESA=ON \
-            -D VTK_RENDERING_BACKEND=OpenGL2 \
             -D VTK_SMP_IMPLEMENTATION_TYPE=OPENMP \
-            -D VTK_USE_MKL=ON \
-            -D VTK_USE_OPENMP=ON \
-            -D VTK_USE_OSMESA=ON \
             -D VTK_USE_QT=OFF \
-            -D VTK_USE_SYSTEM_EIGEN=OFF \
+            -D VTK_USE_SYSTEM_GLEW=ON \
             -D VTK_USE_SYSTEM_LZ4=ON \
-            -D VTK_USE_SYSTEM_ZLIB=ON \
-            -D VTK_USE_TK=OFF \
+            -D VTK_USE_SYSTEM_EXPAT=ON \
+            -D VTK_USE_SYSTEM_EIGEN=ON \
+            -D VTK_USE_SYSTEM_JPEG=ON \
+            -D VTK_USE_SYSTEM_PNG=ON \
+            -D VTK_USE_SYSTEM_TIFF=ON \
+            -D VTK_USE_SYSTEM_HDF5=ON \
+            -D VTK_USE_SYSTEM_NETCDF=ON \
+            -D VTK_USE_SYSTEM_JSONCPP=ON \
             -D VTK_WRAP_PYTHON=OFF \
-            -D VTKm_ENABLE_OPENMP=ON \
             ../src || { tail -v -n +0 CMakeFiles/*.log || true; exit 1; }
     cmake --build .
     cmake --install .
@@ -204,97 +223,112 @@ EOF
 
 FROM builder-vtk as builder-itk
 WORKDIR /opt/build/itk
-ADD --link --keep-git-dir=true https://github.com/InsightSoftwareConsortium/ITK.git#v5.3.0 src
+ADD --keep-git-dir=true https://github.com/InsightSoftwareConsortium/ITK.git#release src
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 RUN <<-EOF
-    cd src && git submodule update --init --recursive && cd ../ && ls src
-    exit 1
+    (cd src && git submodule update --init --recursive)
+
+    export MKLROOT="$(source /opt/intel/oneapi/setvars.sh >/dev/null 2>&1; echo "${MKLROOT:-}")"
+
     mkdir -p build && cd build
 
-    export __INTEL_POST_CFLAGS="-std=c++14"
+    export __INTEL_POST_CFLAGS="-std=c++17 -L${MKLROOT}/lib/intel64 -lmkl_intel_lp64 -lmkl_tbb_thread -lmkl_core -lpthread -lm -ldl -diag-disable=11074 -diag-disable=11076 -diag-disable=186 -diag-disable=1286"
 
     source "/opt/dhcp/etc/compilervars.sh" 
-    
+
     cmake -Wno-dev -GNinja \
-            -D CMAKE_C_COMPILER=icc \
-            -D CMAKE_CXX_COMPILER=icpc \
-            -D CMAKE_CXX_STANDARD=14 \
-            -D CMAKE_INSTALL_PREFIX="${BUILT_DIR}" \
-            -D CMAKE_PREFIX_PATH="${BUILT_DIR}:${CMAKE_PREFIX_PATH:-}" \
-            -D CMAKE_BUILD_TYPE=Release \
             -D BUILD_DOCUMENTATION=OFF \
             -D BUILD_EXAMPLES=OFF \
             -D BUILD_SHARED_LIBS=ON \
-            -D BUILD_TESTING=ON \
-            -D OpenGL_GL_PREFERENCE=GLVND \
+            -D CMAKE_BUILD_TYPE=MinSizeRel \
+            -D CMAKE_C_COMPILER=icc \
+            -D CMAKE_CXX_COMPILER=icpc \
+            -D CMAKE_CXX_STANDARD_REQUIRED=ON \
+            -D CMAKE_CXX_STANDARD=17 \
+            -D CMAKE_INSTALL_PREFIX="/opt/dhcp" \
+            -D CMAKE_PREFIX_PATH="/opt/dhcp:${CMAKE_PREFIX_PATH:-}" \
+            -D ITK_Group_Bridge=ON \
+            -D ITK_Group_Compatibility=ON \
+            -D ITK_Group_Core=ON \
+            -D ITK_Group_Filtering=ON \
+            -D ITK_Group_IO=ON \
+            -D ITK_Group_Nonunit=OFF \
+            -D ITK_Group_Numerics=OFF \
+            -D ITK_Group_Remote=OFF \
+            -D ITK_Group_Video=OFF \
             -D ITK_USE_MKL=ON \
-            -D ITK_USE_SYSTEM_EIGEN=ON \
-            -D ITK_USE_SYSTEM_PNG=ON \
-            -D ITK_USE_SYSTEM_ZLIB=ON \
+            -D ITK_USE_SYSTEM_LIBRARIES=ON \
+            -D ITK_USE_SYSTEM_TBB=OFF \
             -D ITK_USE_TBB=ON \
+            -D Module_GDCM=OFF \
         ../src || { tail -v -n +0 CMakeFiles/*.log || true; exit 1; }
     cmake --build .
     cmake --install .
 EOF
 
-FROM builder-itk as builder-mirtk-prerequisites
+FROM builder-itk as builder-mirtk
 WORKDIR /opt/build/mirtk
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
-    apt-get update -yq && apt-get install -yq liblz4-dev libcilkrts5 && ldconfig
-
-FROM builder-mirtk-prerequisites as builder-mirtk
-WORKDIR /opt/build/mirtk
-ADD --link --keep-git-dir=true https://github.com/BioMedIA/MIRTK.git src
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 RUN <<-EOF
-    cd src
-    git log -1
-    git submodule update --init --recursive
+    (
+        git clone https://github.com/BioMedIA/MIRTK.git src
+        cd src
+        git reset --hard d0722b291597f2c4b1fbb9f929711af59573de58
+        git log -1
+        git submodule update --init --recursive
+        git checkout be86b02d47a7ce74b17224891e25899c30f37d74 -- CMake/Modules/FindTBB.cmake Modules/Common/include/mirtk/Parallel.h Modules/Common/include/mirtk/Parallel.h Modules/Common/src/Parallel.cc
+        # sed -Ei 's/(^.*\bMIRTK_Common_EXPORT\b.*\btbb_scheduler.*$)/\/\/ \1/g' Modules/Common/include/mirtk/Parallel.h
+        # sed -Ei 's/(^.*tbb::task_scheduler_init.*$)/\/\/ \1/g' Modules/Common/include/mirtk/Parallel.h
+        # sed -Ei 's/(^.*tbb[/]task_scheduler_init.h.*$)/\/\/ \1/g' Modules/Common/include/mirtk/Parallel.h
+        #( cd Packages/DrawEM; git fetch --tags origin; git checkout v1.2.1; )
+    )
 
-    # fix: TBB
-    sed -Ei 's/(^.*\bMIRTK_Common_EXPORT\b.*\btbb_scheduler.*$)/\/\/ \1/g' Modules/Common/include/mirtk/Parallel.h
-    sed -Ei 's/(^.*tbb::task_scheduler_init.*$)/\/\/ \1/g' Modules/Common/include/mirtk/Parallel.h
-    sed -Ei 's/(^.*tbb[/]task_scheduler_init.h.*$)/\/\/ \1/g' Modules/Common/include/mirtk/Parallel.h
+    mkdir -p build && cd build
+    export DEBIAN_FRONTEND=noninteractive
+
+    export MKLROOT="$(source /opt/intel/oneapi/setvars.sh >/dev/null 2>&1; echo "${MKLROOT:-}")"
+    export __INTEL_POST_CFLAGS="-std=c++11"
+
+
 
     echo "set(CMAKE_INSTALL_OPENMP_LIBRARIES FALSE)" >> CMakeLists.txt
+
+
+    export __INTEL_POST_CFLAGS="-std=c++17 -L${MKLROOT}/lib/intel64 -lmkl_intel_lp64 -lmkl_tbb_thread -lmkl_core -lpthread -lm -ldl -diag-disable=11074 -diag-disable=11076 -diag-disable=186 -diag-disable=1286"
     
-    echo 'find_library(LZ4_LIBRARIES NAMES libvtklz4-9.3.so HINTS "lz4/lib")' >> CMakeLists.txt
-    echo 'link_libraries(${LZ4_LIBRARIES})' >> CMakeLists.txt
-    echo 'add_definitions(${LZ4_DEFINITIONS})' >> CMakeLists.txt
-
-    cd ../
-    mkdir -p build && cd build
-    export __INTEL_POST_CFLAGS="-static-intel -std=c++14 -llz4"
-
-    source "/opt/dhcp/etc/compilervars.sh"    
+    source "/opt/dhcp/etc/compilervars.sh"
     export CMAKE_INSTALL_OPENMP_LIBRARIES=FALSE
     
     cmake -Wno-dev -GNinja \
-            -D CMAKE_INSTALL_PREFIX="/opt/dhcp" \
-            -D CMAKE_INSTALL_OPENMP_LIBRARIES=FALSE \
-            -D CMAKE_PREFIX_PATH="/opt/dhcp:${CMAKE_PREFIX_PATH:-}" \
+            -D BUILD_CHANGELOG=OFF \
+            -D BUILD_DOCUMENTATION=OFF \
+            -D BUILD_EXAMPLES=OFF \
+            -D BUILD_SHARED_LIBS=ON \
+            -D BUILD_SHARED_LIBS=ON \
+            -D BUILD_TESTING=OFF \
+            -D CMAKE_BUILD_TYPE=Release \
             -D CMAKE_C_COMPILER=icc \
             -D CMAKE_CXX_COMPILER=icpc \
-            -D CMAKE_BUILD_TYPE=Release \
-            -D BUILD_SHARED_LIBS=ON \
-            -D BUILD_DOCUMENTATION=OFF  \
-            -D BUILD_CHANGELOG=OFF \
+            -D CMAKE_CXX_STANDARD_REQUIRED=ON \
+            -D CMAKE_CXX_STANDARD=17 \
+            -D CMAKE_INSTALL_PREFIX="/opt/dhcp" \
+            -D CMAKE_PREFIX_PATH="/opt/dhcp:${CMAKE_PREFIX_PATH:-}" \
+            -D DEPENDS_ITK_DIR="/opt/dhcp" \
+            -D DEPENDS_VTK_DIR="/opt/dhcp" \
+            -D DEPENDS_TBB_DIR="${TBBROOT}" \
+            -D ITK_DIR="/opt/dhcp" \
             -D MODULE_Deformable=ON \
             -D MODULE_DrawEM=ON \
-            -D WITH_VTK=ON \
-            -D WITH_ITK=ON \
-            -D WITH_TBB=ON \
-            -D WITH_FLANN=ON \
-            -D WITH_MATLAB=OFF \
-            -D MIRTK_USE_SYSTEM_PNG=ON \
             -D VTK_DIR="/opt/dhcp" \
             -D ITK_DIR="/opt/dhcp" \
-            -D DEPENDS_VTK_DIR="/opt/dhcp" \
-            -D DEPENDS_ITK_DIR="/opt/dhcp" \
+            -D WITH_FLANN=ON \
+            -D WITH_ITK=ON \
+            -D WITH_MATLAB=OFF \
+            -D WITH_TBB=ON \
+            -D WITH_VTK=ON \
+            -D WITH_EIGEN3=ON \
         ../src || { tail -v -n +0 CMakeFiles/*.log || true; exit 1; }
-    cmake --build .
+    cmake --build . --parallel ${CMAKE_BUILD_PARALLEL_LEVEL} -- -k 1
     cmake --install .
     echo "/opt/dhcp/lib/mirtk" > /etc/ld.so.conf.d/mirtk.conf; ldconfig
 EOF
