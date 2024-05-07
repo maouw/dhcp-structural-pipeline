@@ -347,14 +347,12 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     <<-EOF
     
     sed --in-place -E 's/-openmp-link=static/-qmkl=parallel/g' src/src/CMakeLists.txt
-    sed --in-place -E 's/-static-intel//g' src/src/CMakeLists.txt
     sed --in-place -E 's/DOT_USEFMA\s*0\s*[)]/DOT_USEFMA 1)/g' src/src/kloewe/dot/CMakeLists.txt
     sed --in-place -E 's/DOT_USEAVX512\s*0\s*[)]/DOT_USEAVX512 1)/g' src/src/kloewe/dot/CMakeLists.txt
     sed --in-place 's/if ((CMAKE_COMPILER_IS_GNUCC OR CLANG_FLAG) AND CMAKE_SIZEOF_VOID_P EQUAL 8)/if ((${CMAKE_CXX_COMPILER} MATCHES "^.*icpc$" OR CMAKE_COMPILER_IS_GNUCC OR CLANG_FLAG) AND CMAKE_SIZEOF_VOID_P EQUAL 8)/g' src/src/CMakeLists.txt
     sed --in-place -E '/^\s*ADD_SUBDIRECTORY\s*\(\s*(GuiQt|Qwt|Desktop|Qwt)\s*\)/d' src/src/CMakeLists.txt
     sed --in-place -E 's/PKG_CHECK_MODULES\(\s*Qwt\s+qwt\s*\)/FIND_PACKAGE(Qwt)/g' src/src/CMakeLists.txt
 
-    #sed --in-place -E '/^\s*Qt[56]::Gui\s*/d' src/src/Tests/CMakeLists.txt src/src/CommandLine/CMakeLists.txt
     sed --in-place -E '/^GuiQt\s*$/d' src/src/Tests/CMakeLists.txt
 
     sed --in-place -E '/^\$\{CMAKE_SOURCE_DIR\}\/GuiQt/d' src/src/Tests/CMakeLists.txt
@@ -464,9 +462,9 @@ RUN <<-EOF
     mkdir -p build && cd build
 
     export MKLROOT="$(source /opt/intel/oneapi/setvars.sh >/dev/null 2>&1; echo "${MKLROOT:-}")"
-    export __INTEL_POST_CFLAGS="-std=c++17 -L${MKLROOT}/lib/intel64 -lmkl_intel_lp64 -lmkl_tbb_thread -lmkl_core -lpthread -lm -ldl -diag-disable=11074 -diag-disable=11076 -diag-disable=186 -diag-disable=1286"
+    export __INTEL_POST_CFLAGS="-std=c++17 -no-cilk"
     source "/opt/dhcp/etc/compilervars.sh"
-    exit 0
+    
     cmake -Wno-dev -GNinja \
             -D CMAKE_BUILD_TYPE=Release \
             -D CMAKE_C_COMPILER=icc \
@@ -475,13 +473,10 @@ RUN <<-EOF
             -D CMAKE_CXX_STANDARD=17 \
             -D CMAKE_INSTALL_PREFIX="/opt/dhcp" \
             -D CMAKE_PREFIX_PATH="/opt/dhcp:${CMAKE_PREFIX_PATH:-}" \
-            -D WITH_TBB=ON \
-            -D WITH_ITK=ON \
         ../src
     cmake --build .
     cmake --install .
-    install -v -Dm755 bin/*  /opt/built/bin/
-    install -v -Dm766
+    install -v -Dm755 bin/*  /opt/dhcp/bin
 EOF
 #    echo "export DRAWEMDIR=$DRAWEMDIR" >> $code_dir/parameters/path.sh
 #    echo "export DRAWEMDIR=$DRAWEMDIR" >> $code_dir/parameters/path.sh
