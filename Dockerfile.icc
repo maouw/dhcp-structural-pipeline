@@ -46,8 +46,53 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         time \
         unzip \
         wget
-    
+
     apt-get -yq install parallel
+
+    apt-get install -yq --no-install-recommends \
+        freeglut3-dev \
+        libarpack2-dev \
+        libboost-dev \
+        libboost-math-dev \
+        libboost-random-dev \
+        libcilkrts5 \
+        libcoarrays-openmpi-dev \
+        libdcmtk-dev \
+        libdouble-conversion-dev \
+        libeigen3-dev  \
+        libexpat-dev \
+        libfftw3-dev \
+        libflann-dev \
+        libfreetype6-dev \
+        libftgl-dev \
+        libgdcm-dev \
+        libgl-dev \
+        libglew-dev \
+        libglib2.0-dev \
+        libglvnd-dev \
+        libglx-dev \
+        libglm-dev \
+        libgtest-dev \
+        libhdf5-dev \
+        libjpeg-dev \
+        libjsoncpp-dev \
+        liblz4-dev \
+        libminc-dev \
+        libnetcdf-dev \
+        libnifti-dev \
+        libosmesa6-dev \
+        libpng-dev \
+        libpng-tools \
+        libqt5opengl5-dev \
+        libquazip5-dev \
+        libqwt-qt5-dev \
+        libssl-dev \
+        libsuitesparse-dev \
+        libxml2-dev \
+        mesa-utils \
+        qtbase5-dev \
+        uuid-dev \
+        zlib1g-dev
 
     { curl -fsSL https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS-2023.PUB | gpg --dearmor > /usr/share/keyrings/intel-oneapi-archive-keyring.gpg || exit 1; }
     echo "deb [signed-by=/usr/share/keyrings/intel-oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main " > /etc/apt/sources.list.d/oneAPI.list
@@ -85,59 +130,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 EOF
 
 # Install headers and libraries:
-FROM builder-intel as builder-headers
-SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
-<<-EOF
-    export DEBIAN_FRONTEND=noninteractive
-    apt-get install -yq --no-install-recommends \
-        freeglut3-dev \
-        libarpack2-dev \
-        libboost-dev \
-        libboost-math-dev \
-        libboost-random-dev \
-        libcilkrts5 \
-        libcoarrays-openmpi-dev \
-        libdcmtk-dev \
-        libdouble-conversion-dev \
-        libeigen3-dev  \
-        libexpat-dev \
-        libfftw3-dev \
-        libflann-dev \
-        libfreetype6-dev \
-        libftgl-dev \
-        libgdcm-dev \
-        libgl-dev \
-        libglew-dev \
-        libglib2.0-dev \
-        libglvnd-dev \
-        libglx-dev \
-        libgtest-dev \
-        libhdf5-dev \
-        libjpeg-dev \
-        libjsoncpp-dev \
-        liblz4-dev \
-        libminc-dev \
-        libnetcdf-dev \
-        libnifti-dev \
-        libosmesa6-dev \
-        libpng-dev \
-        libpng-tools \
-        libqt5opengl5-dev \
-        libqwt-qt5-dev \
-        libssl-dev \
-        libsuitesparse-dev \
-        libxml2-dev \
-        mesa-utils \
-        qtbase5-dev \
-        uuid-dev \
-        zlib1g-dev
-EOF
 
-FROM builder-headers as builder-environment
+FROM builder-intel as builder-environment
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
+ENV PATH="/opt/dhcp/bin:${PATH}"
 RUN \
 <<-EOF
     mkdir -p /opt/dhcp/{bin,etc,lib,libexec,src,share}
@@ -158,9 +154,7 @@ RUN <<-EOF
     mkdir -p build && cd build
 
     export MKLROOT="$(source /opt/intel/oneapi/setvars.sh >/dev/null 2>&1; echo "${MKLROOT:-}")"
-    export __INTEL_POST_CFLAGS="-std=c++11 -L${MKLROOT}/lib/intel64 -lmkl_intel_lp64 -lmkl_intel_thread -lmkl_core -liomp5 -lpthread -lm -ldl"
-
-    export __INTEL_POST_CFLAGS="-std=c++11"
+    export __INTEL_POST_CFLAGS="-std=c++11 -Wl,--start-group ${MKLROOT}/lib/intel64/libmkl_intel_lp64.a ${MKLROOT}/lib/intel64/libmkl_intel_thread.a ${MKLROOT}/lib/intel64/libmkl_core.a -Wl,--end-group -liomp5 -lpthread -lm -ldl -qmkl=parallel -static-intel"
     source "/opt/dhcp/etc/compilervars.sh" 
 
     cmake -Wno-dev -GNinja \
@@ -232,7 +226,7 @@ RUN <<-EOF
 
     mkdir -p build && cd build
 
-    export __INTEL_POST_CFLAGS="-std=c++17 -L${MKLROOT}/lib/intel64 -lmkl_intel_lp64 -lmkl_tbb_thread -lmkl_core -lpthread -lm -ldl -diag-disable=11074 -diag-disable=11076 -diag-disable=186 -diag-disable=1286"
+    export __INTEL_POST_CFLAGS="-std=c++17 -Wl,--start-group ${MKLROOT}/lib/intel64/libmkl_intel_lp64.a ${MKLROOT}/lib/intel64/libmkl_tbb_thread.a ${MKLROOT}/lib/intel64/libmkl_core.a -Wl,--end-group -L${TBBROOT}/lib/intel64/gcc4.8 -ltbb -lstdc++ -lpthread -lm -ldl -diag-disable=11074 -diag-disable=11076 -diag-disable=186 -diag-disable=1286 -static-intel"
 
     source "/opt/dhcp/etc/compilervars.sh" 
 
@@ -240,7 +234,7 @@ RUN <<-EOF
             -D BUILD_DOCUMENTATION=OFF \
             -D BUILD_EXAMPLES=OFF \
             -D BUILD_SHARED_LIBS=ON \
-            -D CMAKE_BUILD_TYPE=MinSizeRel \
+            -D CMAKE_BUILD_TYPE=Release \
             -D CMAKE_C_COMPILER=icc \
             -D CMAKE_CXX_COMPILER=icpc \
             -D CMAKE_CXX_STANDARD_REQUIRED=ON \
@@ -287,15 +281,10 @@ RUN <<-EOF
     export DEBIAN_FRONTEND=noninteractive
 
     export MKLROOT="$(source /opt/intel/oneapi/setvars.sh >/dev/null 2>&1; echo "${MKLROOT:-}")"
-    export __INTEL_POST_CFLAGS="-std=c++11"
-
-
 
     echo "set(CMAKE_INSTALL_OPENMP_LIBRARIES FALSE)" >> CMakeLists.txt
 
-
-    export __INTEL_POST_CFLAGS="-std=c++17 -L${MKLROOT}/lib/intel64 -lmkl_intel_lp64 -lmkl_tbb_thread -lmkl_core -lpthread -lm -ldl -diag-disable=11074 -diag-disable=11076 -diag-disable=186 -diag-disable=1286"
-
+    export __INTEL_POST_CFLAGS="-std=c++17  -Wl,--start-group ${MKLROOT}/lib/intel64/libmkl_intel_lp64.a ${MKLROOT}/lib/intel64/libmkl_tbb_thread.a ${MKLROOT}/lib/intel64/libmkl_core.a -Wl,--end-group -L${TBBROOT}/lib/intel64/gcc4.8 -ltbb -lstdc++ -lpthread -lm -ldl -diag-disable=11074 -diag-disable=11076 -diag-disable=186 -diag-disable=1286 -static-intel"
     source "/opt/dhcp/etc/compilervars.sh"
     export CMAKE_INSTALL_OPENMP_LIBRARIES=FALSE
     
@@ -304,29 +293,27 @@ RUN <<-EOF
             -D BUILD_DOCUMENTATION=OFF \
             -D BUILD_EXAMPLES=OFF \
             -D BUILD_SHARED_LIBS=ON \
-            -D BUILD_SHARED_LIBS=ON \
             -D BUILD_TESTING=OFF \
             -D CMAKE_BUILD_TYPE=Release \
             -D CMAKE_C_COMPILER=icc \
             -D CMAKE_CXX_COMPILER=icpc \
-            -D CMAKE_CXX_STANDARD_REQUIRED=ON \
             -D CMAKE_CXX_STANDARD=17 \
+            -D CMAKE_CXX_STANDARD_REQUIRED=ON \
             -D CMAKE_INSTALL_PREFIX="/opt/dhcp" \
             -D CMAKE_PREFIX_PATH="/opt/dhcp:${CMAKE_PREFIX_PATH:-}" \
             -D DEPENDS_ITK_DIR="/opt/dhcp" \
-            -D DEPENDS_VTK_DIR="/opt/dhcp" \
             -D DEPENDS_TBB_DIR="${TBBROOT}" \
+            -D DEPENDS_VTK_DIR="/opt/dhcp" \
             -D ITK_DIR="/opt/dhcp" \
             -D MODULE_Deformable=ON \
             -D MODULE_DrawEM=ON \
             -D VTK_DIR="/opt/dhcp" \
-            -D ITK_DIR="/opt/dhcp" \
+            -D WITH_EIGEN3=ON \
             -D WITH_FLANN=ON \
             -D WITH_ITK=ON \
             -D WITH_MATLAB=OFF \
             -D WITH_TBB=ON \
             -D WITH_VTK=ON \
-            -D WITH_EIGEN3=ON \
         ../src || { tail -v -n +0 CMakeFiles/*.log || true; exit 1; }
     cmake --build . --parallel ${CMAKE_BUILD_PARALLEL_LEVEL} -- -k 1
     cmake --install .
@@ -357,8 +344,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 
     sed --in-place -E '/^\$\{CMAKE_SOURCE_DIR\}\/GuiQt/d' src/src/Tests/CMakeLists.txt
 
-    dpkg -s libquazip5-dev >/dev/null 2>&1 || { apt-get update -q; apt-get install -yq libquazip5-dev; }
-    dpkg -s libglm-dev >/dev/null 2>&1 || { apt-get update -q; apt-get install -yq libglm-dev; }
     cmake_dir="$(echo /usr/share/cmake* | head -n 1)"
     [ -d "${cmake_dir:-}" ] || exit 1
     cp /usr/share/quazip/FindQuaZip5.cmake "${cmake_dir}/Modules/FindQuaZip.cmake"
@@ -366,7 +351,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 
     export MKLROOT="$(source /opt/intel/oneapi/setvars.sh >/dev/null 2>&1; echo "${MKLROOT:-}")"
     mkdir -p build && cd build
-    export __INTEL_POST_CFLAGS="-std=c++17 -qmkl=parallel -lQt5Gui -wd9"
+    export __INTEL_POST_CFLAGS="-std=c++17  -Wl,--start-group ${MKLROOT}/lib/intel64/libmkl_intel_lp64.a ${MKLROOT}/lib/intel64/libmkl_tbb_thread.a ${MKLROOT}/lib/intel64/libmkl_core.a -Wl,--end-group -L${TBBROOT}/lib/intel64/gcc4.8 -ltbb -lstdc++ -lpthread -lm -ldl -qmkl=parallel -lQt5Gui -wd9"
 
     source "/opt/dhcp/etc/compilervars.sh"    
 
@@ -403,7 +388,7 @@ RUN <<-EOF
     mkdir -p build && cd build
 
     export MKLROOT="$(source /opt/intel/oneapi/setvars.sh >/dev/null 2>&1; echo "${MKLROOT:-}")"
-    export __INTEL_POST_CFLAGS="-std=gnu++11 -L${MKLROOT}/lib/intel64 -lmkl_intel_lp64 -lmkl_intel_thread -lmkl_core -liomp5 -lpthread -lm -ldl"
+    export __INTEL_POST_CFLAGS="-std=gnu++11 -static-intel"
     source "/opt/dhcp/etc/compilervars.sh"
 
     export MIRTK_DIR="/opt/dhcp/lib/cmake/mirtk"
@@ -432,8 +417,8 @@ FROM builder-sphericalmesh as builder-fsl
 ARG FSL_CONDA_ENV=fsl
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 RUN <<-EOF
+
     export MKLROOT="$(source /opt/intel/oneapi/setvars.sh >/dev/null 2>&1; echo "${MKLROOT:-}")"
-    export __INTEL_POST_CFLAGS="-std=gnu++11 -L${MKLROOT}/lib/intel64 -lmkl_intel_lp64 -lmkl_intel_thread -lmkl_core -liomp5 -lpthread -lm -ldl"
     source "/opt/dhcp/etc/compilervars.sh"
 
     conda config --prepend channels conda-forge
@@ -462,7 +447,7 @@ RUN <<-EOF
     mkdir -p build && cd build
 
     export MKLROOT="$(source /opt/intel/oneapi/setvars.sh >/dev/null 2>&1; echo "${MKLROOT:-}")"
-    export __INTEL_POST_CFLAGS="-std=c++17 -no-cilk"
+    export __INTEL_POST_CFLAGS="-std=c++17 -no-cilk -static-intel"
     source "/opt/dhcp/etc/compilervars.sh"
     
     cmake -Wno-dev -GNinja \

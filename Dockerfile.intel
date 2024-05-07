@@ -54,41 +54,56 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
-    set -e \
-    && apt-get install -yq --no-install-recommends intel-hpckit-2023.2.0
+    apt-get install -yq --no-install-recommends intel-hpckit-2023.2.0 || exit 1
 
-ARG WITH_INTEL_ONEAPI_PYTHON=1
 ARG INTEL_ONEAPI_PYTHON_VERSION=2023.2.0-49420
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
-    if [ "${WITH_INTEL_ONEAPI_PYTHON:-0}" = 1]; then apt-get install -yq --no-install-recommends "intel-oneapi-python${INTEL_ONEAPI_PYTHON_VERSION:+=${INTEL_ONEAPI_PYTHON_VERSION}}" || exit 1; fi
+    apt-get install -yq --no-install-recommends intel-oneapi-python"${INTEL_ONEAPI_PYTHON_VERSION:+=${INTEL_ONEAPI_PYTHON_VERSION}}" || exit 1
 
 
-FROM builder as workbench-prerequisites
+FROM builder as main-prerequisites
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
-    <<-EOF
     apt-get install -yq --no-install-recommends \
+        freeglut3-dev \
+        libarpack2-dev \
         libboost-dev \
+        libboost-math-dev \
+        libboost-random-dev \
+        libdcmtk-dev \
+        libdouble-conversion-dev \
         libeigen3-dev \
+        libexpat-dev \
+        libfftw3-dev \
+        libflann-dev \
         libfreetype6-dev \
         libftgl-dev \
+        libgdcm-dev \
         libglib2.0-dev \
+        libglvnd-dev \
+        libgtest-dev \
+        libhdf5-dev \
+        libminc-dev \
+        libnifti-dev \
+        libnifti-dev \
         libosmesa6-dev \
+        libpng-dev \
         libqt5opengl5-dev \
         libqwt-qt5-dev \
         libssl-dev \
+        libsuitesparse-dev \
         qtbase5-dev \
-        zlib1g-dev
-EOF
+        uuid-dev \
+        zlib1g-dev || exit 1
 
-FROM workbench-prerequisites as workbench-builder
+FROM main-prerequisites as workbench-builder
 WORKDIR /opt/build/workbench
 SHELL ["/bin/bash", "-eE", "-c"]
 ARG NCPU=
-RUN <<EOF
+RUN <<-EOF
     git clone --depth=1 --shallow-submodules https://github.com/Washington-University/workbench.git workbench
     
     # Modify Intel compiler name match to include icpx, the new Intel CPP compiler:
@@ -98,7 +113,7 @@ RUN <<EOF
         total_cpus="$(nproc)"
         try_cpus=$((total_cpus/2))
         (( 1 > try_cpus)) && try_cpus=1
-        NCPU="${try_cpus}"
+        NCPU="${try_cpus:-1}"
     fi
     cmake \
         -D CMAKE_C_COMPILER=icx \
@@ -118,48 +133,6 @@ RUN <<EOF
     rm -rf workbench
 EOF
 
-# SHELL ["/bin/bash", "-eEux", "-o", "pipefail", "-c"]
-# RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-#     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-#     --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
-#     <<-EOF
-# export DEBIAN_FRONTEND=noninteractive
-# apt-get update -yq
-# apt-get install -yq --no-install-recommends \
-#         python3-dev \
-#         python3-pip
-# EOF
-
-# FROM workbench-builder as itk-builder
-# SHELL ["/bin/bash", "-eEux", "-o", "pipefail", "-c"]
-# RUN <<-EOF
-# pip install --no-cache-dir itk==5.3.0
-# EOF
-
-FROM builder as mirtk-builder-prerequisites
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
-    <<-EOF
-export DEBIAN_FRONTEND=noninteractive
-apt-get update -yq
-
-apt-get install -yq --no-install-recommends \
-                freeglut3-dev \
-                libarpack2-dev \
-                libboost-math-dev \
-                libboost-random-dev \
-                libfftw3-dev \
-                libflann-dev \
-                libgtest-dev \
-                libnifti-dev \
-                libpng-dev \
-                libsuitesparse-dev \
-                python3 \
-                python3-pip \
-                uuid-dev \
-                libglvnd-dev
-EOF
 
 # FROM mirtk-builder-prerequisites as mirtk-builder-eigen
 # WORKDIR /opt/build/mirtk
@@ -173,7 +146,8 @@ EOF
 #     && mv cmake/FindEigen3.cmake /usr/share/cmak/Modules/ \
 #     && cd /usr/src \
 #     && rm -rf ${EIGEN_SOURCE_DIR}
-FROM mirtk-builder-prerequisites as mirtk-builder-vtk
+
+FROM main-prerequisites as mirtk-builder-vtk
 WORKDIR /opt/build/vtk
 ARG VTK_VERSION=9.3.0
 ARG NCPU=

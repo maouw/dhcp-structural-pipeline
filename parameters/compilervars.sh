@@ -17,7 +17,7 @@ ldconfig
 export __INTEL_PRE_CFLAGS="${__INTEL_PRE_CFLAGS:+${__INTEL_PRE_CFLAGS:-} }-diag-disable=10441 -diag-disable=15009 -diag-disable=10006 -diag-disable=10370 -diag-disable=10148"
 
 # Set optimizer flags
-export __INTEL_POST_CFLAGS="${INTEL_OPTIMIZER_FLAGS:-}${__INTEL_POST_CFLAGS:+ ${__INTEL_POST_CFLAGS:-}}"
+export __INTEL_POST_CFLAGS="${INTEL_OPTIMIZER_FLAGS:-}${__INTEL_POST_CFLAGS:+ ${__INTEL_POST_CFLAGS:-}} -no-cilk"
 
 total_nproc="$(nproc || grep -c '^processor[[:space:]]*:' /proc/cpuinfo || true)"
 total_nproc="${total_nproc:-0}"
