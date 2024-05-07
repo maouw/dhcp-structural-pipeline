@@ -338,71 +338,116 @@ FROM builder-mirtk as builder-workbench
 WORKDIR /opt/build/workbench
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 ADD --link --keep-git-dir=true https://github.com/Washington-University/workbench.git src
-RUN <<-EOF
-    sed --in-place -E 's/-openmp-link=static//g' src/src/CMakeLists.txt
+COPY NiftiHeader.cxx /opt/build/workbench/src/src/Nifti/NiftiHeader.cxx
+COPY FindQwt.cmake /opt/build/workbench/FindQwt.cmake
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
+    <<-EOF
+    
+    sed --in-place -E 's/-openmp-link=static/-qmkl=parallel/g' src/src/CMakeLists.txt
     sed --in-place -E 's/-static-intel//g' src/src/CMakeLists.txt
+    sed --in-place -E 's/DOT_USEFMA\s*0\s*[)]/DOT_USEFMA 1)/g' src/src/kloewe/dot/CMakeLists.txt
+    sed --in-place -E 's/DOT_USEAVX512\s*0\s*[)]/DOT_USEAVX512 1)/g' src/src/kloewe/dot/CMakeLists.txt
+    sed --in-place 's/if ((CMAKE_COMPILER_IS_GNUCC OR CLANG_FLAG) AND CMAKE_SIZEOF_VOID_P EQUAL 8)/if ((${CMAKE_CXX_COMPILER} MATCHES "^.*icpc$" OR CMAKE_COMPILER_IS_GNUCC OR CLANG_FLAG) AND CMAKE_SIZEOF_VOID_P EQUAL 8)/g' src/src/CMakeLists.txt
+    sed --in-place -E '/^\s*ADD_SUBDIRECTORY\s*\(\s*(GuiQt|Qwt|Desktop|Qwt)\s*\)/d' src/src/CMakeLists.txt
+    sed --in-place -E 's/PKG_CHECK_MODULES\(\s*Qwt\s+qwt\s*\)/FIND_PACKAGE(Qwt)/g' src/src/CMakeLists.txt
+
+    #sed --in-place -E '/^\s*Qt[56]::Gui\s*/d' src/src/Tests/CMakeLists.txt src/src/CommandLine/CMakeLists.txt
+    sed --in-place -E '/^GuiQt\s*$/d' src/src/Tests/CMakeLists.txt
+
+    sed --in-place -E '/^\$\{CMAKE_SOURCE_DIR\}\/GuiQt/d' src/src/Tests/CMakeLists.txt
+
+    dpkg -s libquazip5-dev >/dev/null 2>&1 || { apt-get update -q; apt-get install -yq libquazip5-dev; }
+    dpkg -s libglm-dev >/dev/null 2>&1 || { apt-get update -q; apt-get install -yq libglm-dev; }
+    cmake_dir="$(echo /usr/share/cmake* | head -n 1)"
+    [ -d "${cmake_dir:-}" ] || exit 1
+    cp /usr/share/quazip/FindQuaZip5.cmake "${cmake_dir}/Modules/FindQuaZip.cmake"
+    cp FindQwt.cmake "${cmake_dir}/FindQwt.cmake"
 
     export MKLROOT="$(source /opt/intel/oneapi/setvars.sh >/dev/null 2>&1; echo "${MKLROOT:-}")"
     mkdir -p build && cd build
-    export __INTEL_POST_CFLAGS="-std=c++14 -L${MKLROOT}/lib/intel64 -lmkl_intel_lp64 -lmkl_intel_thread -lmkl_core -liomp5 -lpthread -lm -ldl"
+    export __INTEL_POST_CFLAGS="-std=c++17 -qmkl=parallel -lQt5Gui -wd9"
 
     source "/opt/dhcp/etc/compilervars.sh"    
 
     cmake -Wno-dev -GNinja \
         -D CMAKE_C_COMPILER=icc \
         -D CMAKE_CXX_COMPILER=icpc \
-        -D CMAKE_CXX_STANDARD=14 \
+        -D CMAKE_CXX_STANDARD=17 \
         -D CMAKE_CXX_STANDARD_REQUIRED=ON \
-        -D CMAKE_CXX_EXTENSIONS=OFF \
         -D CMAKE_BUILD_TYPE=Release \
+        -D CMAKE_INSTALL_PREFIX="/opt/dhcp" \
+        -D CMAKE_PREFIX_PATH="/opt/dhcp:${CMAKE_PREFIX_PATH:-}" \
         -D WORKBENCH_MESA_DIR=/usr \
         -D WORKBENCH_USE_QT5=TRUE \
+        -D WORKBENCH_USE_SIMD=TRUE \
+        -D WORKBENCH_USE_QT5_QOPENGL_WIDGET=TRUE \
         -D OpenGL_GL_PREFERENCE=GLVND \
         ../src/src
     cmake --build . --parallel ${CMAKE_BUILD_PARALLEL_LEVEL} -- -k 1
+    ctest
     cmake --install .
+
 EOF
 
 FROM builder-workbench as builder-sphericalmesh
 WORKDIR /opt/build/sphericalmesh
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
-ADD --link --keep-git-dir=true https://github.com/amakropoulos/SphericalMesh.git#dhcp-v1.2 src
+ADD --link --keep-git-dir=true https://github.com/amakropoulos/SphericalMesh.git#c41824cda791b806f79b88f2b27604a2f3268d19 src
+COPY SphericalMeshConvertToString.h /opt/build/sphericalmesh/src/include/mirtk/SphericalMeshConvertToString.h
 RUN <<-EOF
-    mkdir -p build && cd build
-    export __INTEL_POST_CFLAGS="-std=gnu++0x -static-intel -Wno-unused-command-line-argument"
+    # Fix some issues with compilation:
+    sed --in-place -E  's/std::to_string/convert_to_string/g' src/include/mirtk/*.h src/src/*.cc
+    sed --in-place -E 's/(^#define M.*H_*[[:space:]]*$)/\1\n#include "mirtk\/SphericalMeshConvertToString.h"\n/g' src/include/mirtk/{M2SParameters.h,M2SDiffuser.h,M2SRemesher.h,MeshToSphere.h}
 
+    mkdir -p build && cd build
+
+    export MKLROOT="$(source /opt/intel/oneapi/setvars.sh >/dev/null 2>&1; echo "${MKLROOT:-}")"
+    export __INTEL_POST_CFLAGS="-std=gnu++11 -L${MKLROOT}/lib/intel64 -lmkl_intel_lp64 -lmkl_intel_thread -lmkl_core -liomp5 -lpthread -lm -ldl"
     source "/opt/dhcp/etc/compilervars.sh"
-    ldconfig
+
+    export MIRTK_DIR="/opt/dhcp/lib/cmake/mirtk"
+    export VTK_DIR="/opt/dhcp/lib/cmake/vtk-8.2"
 
     cmake -Wno-dev -GNinja \
         -D CMAKE_C_COMPILER=icc \
         -D CMAKE_CXX_COMPILER=icpc \
+        -D CMAKE_CXX_STANDARD=11 \
+        -D CMAKE_CXX_STANDARD_REQUIRED=ON \
+        -D CMAKE_CXX_EXTENSIONS=OFF \
         -D CMAKE_BUILD_TYPE=Release \
-        -D VTK_DIR="/opt/dhcp" \
-        -D ITK_DIR="/opt/dhcp" \
-        -D MIRTK_DIR="/opt/dhcp" \
-        ../src/src
+        -D CMAKE_INSTALL_PREFIX="/opt/dhcp" \
+        -D CMAKE_PREFIX_PATH="/opt/dhcp:${CMAKE_PREFIX_PATH:-}" \
+        -D CMAKE_BUILD_TYPE=Release \
+        ../src
     cmake --build .
     cmake --install .
+    cp bin/mesh-to-sphere /opt/dhcp/bin/mesh-to-sphere
 EOF
 
-FROM builder-workbench as builder-fsl
+#ADD --link --keep-git-dir=true https://github.com/amakropoulos/SphericalMesh.git#dhcp-v1.2 src
+#    git reset --hard c41824cda791b806f79b88f2b27604a2f3268d19
+
+FROM builder-sphericalmesh as builder-fsl
 ARG FSL_CONDA_ENV=fsl
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 RUN <<-EOF
-    export __INTEL_POST_CFLAGS="${__INTEL_POST_CFLAGS:-} -std=c++11"
-    source "/opt/dhcp/etc/compilervars.sh"    
-    conda config --append channels https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public
-    conda config --append channels conda-forge
-    conda install -y --verbose -n "${FSL_CONDA_ENV}" fsl-avwutils
+    export MKLROOT="$(source /opt/intel/oneapi/setvars.sh >/dev/null 2>&1; echo "${MKLROOT:-}")"
+    export __INTEL_POST_CFLAGS="-std=gnu++11 -L${MKLROOT}/lib/intel64 -lmkl_intel_lp64 -lmkl_intel_thread -lmkl_core -liomp5 -lpthread -lm -ldl"
+    source "/opt/dhcp/etc/compilervars.sh"
+
+    conda config --prepend channels conda-forge
+    conda config --prepend channels https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public
+    conda create -y --verbose -n "${FSL_CONDA_ENV}"  fsl-avwutils
     conda clean --all -y
-    FSLBINS="$(command -v fslmaths || true)"
-    test -n "${FSLBINDS:-}"
+    FSLBINS="$(conda run -n "${FSL_CONDA_ENV}" command -v fslmaths || true)"
+    test -n "${FSLBINS:-}"
     FSLDIR="${FSLBINS%/*/*}"
     mkdir -p /etc/fsl
     echo "export FSLDIR=\"${FSLDIR}\"; . \${FSLDIR}/etc/fslconf/fsl.sh" > "/opt/dhcp/etc/fsl.sh"
 EOF
-
 
 
 FROM builder-fsl as builder-pipeline
