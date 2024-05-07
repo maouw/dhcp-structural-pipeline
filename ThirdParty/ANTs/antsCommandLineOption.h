@@ -63,7 +63,7 @@ public:
 
   itkNewMacro( Self );
 
-  itkTypeMacro( Option, DataObject );
+  itkTypeMacro( OptionFunction, DataObject );
 
   typedef std::deque<std::string> ParameterStackType;
 
@@ -123,7 +123,7 @@ public:
 
   itkNewMacro( Self );
 
-  itkTypeMacro( Option, DataObject );
+  itkTypeMacro( CommandLineOption, DataObject );
 
   typedef OptionFunction OptionFunctionType;
 
