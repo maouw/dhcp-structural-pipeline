@@ -418,7 +418,7 @@ FROM builder-workbench as builder-sphericalmesh
 WORKDIR /opt/build/sphericalmesh
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 ADD --link --keep-git-dir=true https://github.com/amakropoulos/SphericalMesh.git#c41824cda791b806f79b88f2b27604a2f3268d19 src
-COPY SphericalMeshConvertToString.h /opt/build/sphericalmesh/src/include/mirtk/SphericalMeshConvertToString.h
+COPY src-ext/SphericalMeshConvertToString.h /opt/build/sphericalmesh/src/include/mirtk/SphericalMeshConvertToString.h
 RUN <<-EOF
     # Fix some issues with compilation:
     sed --in-place -E  's/std::to_string/convert_to_string/g' src/include/mirtk/*.h src/src/*.cc
@@ -427,22 +427,19 @@ RUN <<-EOF
     mkdir -p build && cd build
 
     export MKLROOT="$(source /opt/intel/oneapi/setvars.sh >/dev/null 2>&1; echo "${MKLROOT:-}")"
-    export __INTEL_POST_CFLAGS="-std=gnu++11 -static-intel"
+    export __INTEL_POST_CFLAGS="-std=c++17 -L${MKLROOT}/lib/intel64 -lmkl_intel_lp64 -lmkl_tbb_thread -lmkl_core -lpthread -lm -ldl"
+
     source "/opt/dhcp/etc/compilervars.sh"
 
-    export MIRTK_DIR="/opt/dhcp/lib/cmake/mirtk"
-    export VTK_DIR="/opt/dhcp/lib/cmake/vtk-8.2"
-
+    exit 0
     cmake -Wno-dev -GNinja \
+        -D CMAKE_BUILD_TYPE=Release \
         -D CMAKE_C_COMPILER=icc \
         -D CMAKE_CXX_COMPILER=icpc \
-        -D CMAKE_CXX_STANDARD=11 \
+        -D CMAKE_CXX_STANDARD=17 \
         -D CMAKE_CXX_STANDARD_REQUIRED=ON \
-        -D CMAKE_CXX_EXTENSIONS=OFF \
-        -D CMAKE_BUILD_TYPE=Release \
         -D CMAKE_INSTALL_PREFIX="/opt/dhcp" \
         -D CMAKE_PREFIX_PATH="/opt/dhcp:${CMAKE_PREFIX_PATH:-}" \
-        -D CMAKE_BUILD_TYPE=Release \
         ../src
     cmake --build .
     cmake --install .
