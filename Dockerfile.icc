@@ -22,7 +22,8 @@ SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
-<<-EOF
+    <<-EOF
+
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq && \
     apt-get install -yq --no-install-recommends \
@@ -108,7 +109,7 @@ SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
-<<-EOF
+    <<-EOF
     export DEBIAN_FRONTEND=noninteractive
     apt-get install -yq \
         build-essential \
@@ -123,26 +124,27 @@ SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
-<<-EOF
+    <<-EOF
+
     export DEBIAN_FRONTEND=noninteractive
     apt-get install -yq intel-hpckit-2023.2.0
     apt-get install -yq intel-oneapi-python=2023.2.0-49420
 EOF
 
 # Install headers and libraries:
-
 FROM builder-intel as builder-environment
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 ENV PATH="/opt/dhcp/bin:${PATH}"
-RUN \
-<<-EOF
+COPY --chmod=644 parameters/compilervars.sh /opt/dhcp/etc/compilervars.sh
+RUN <<-EOF
+
     mkdir -p /opt/dhcp/{bin,etc,lib,libexec,src,share}
     chmod -R a+rX /opt/dhcp
-    echo /opt/dhcp/lib > /etc/ld.so.conf.d/dhcp-pipeline.conf
+    echo /opt/dhcp/lib > /etc/ld.so.conf.d/0-dhcp-pipeline.conf
     ldconfig
 EOF
-ENV PATH="/opt/dhcp/bin:${PATH}"
-COPY --chmod=644 parameters/compilervars.sh /opt/dhcp/etc/compilervars.sh
+
+# Start build:
 FROM builder-environment as builder-vtk
 WORKDIR /opt/build/vtk
 ADD --link --keep-git-dir=true https://github.com/Kitware/VTK.git#v8.2.0 src
@@ -515,8 +517,10 @@ WORKDIR "/opt/build/pipeline"
 COPY --chmod=a+rX dhcp-pipeline.sh version CHANGES.txt /opt/dhcp/src/
 COPY --chmod=a+rX parameters /opt/dhcp/src/parameters
 COPY --chmod=a+rX scripts /opt/dhcp/src/scripts
+COPY ldconfig-intel.conf /etc/ld.so.conf.d/0-intel.conf
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 RUN <<-EOF
 
     ln -s "${DRAWEMDIR}/atlases" /opt/dhcp/src/atlases
+    ldconfig
 EOF
