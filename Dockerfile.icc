@@ -518,5 +518,5 @@ COPY --chmod=a+rX scripts /opt/dhcp/src/scripts
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 RUN <<-EOF
 
-    ln -s /opt/dhcp/share/DrawEm/atlases /opt/dhcp/src/atlases
+    ln -s "${DRAWEMDIR}/atlases" /opt/dhcp/src/atlases
 EOF

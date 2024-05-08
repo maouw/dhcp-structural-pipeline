@@ -40,6 +40,11 @@ root@2c1935676324:/opt/dhcp/lib# ldd *.so | grep 'intel' | sed -E 's/\s+\(.*$//g
 /opt/intel/oneapi/mkl/2023.2.0/lib/intel64/libmkl_core.so.2
 /opt/intel/oneapi/mkl/2023.2.0/lib/intel64/libmkl_intel_lp64.so.2
 /opt/intel/oneapi/mkl/2023.2.0/lib/intel64/libmkl_intel_thread.so.2
+
+/opt/intel/oneapi/compiler/2023.2.0/linux/compiler/lib/intel64_lin
+/opt/intel/oneapi/mkl/2023.2.0/lib/intel64
+/opt/intel/oneapi/tbb/2021.12/env/../lib/intel64/gcc4.8
+
  echo $LD_LIBRARY_PATH  | tr ':' '\n' | grep -E '/opt/intel/oneapi/(tbb|mpi|ipp|ippcp)'
     libimf.so => not found
     libintlc.so.5 => not found
