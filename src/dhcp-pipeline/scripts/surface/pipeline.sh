@@ -1,4 +1,5 @@
 #!/bin/bash
+_oldflags="$-"; set -a
 
 usage() {
 	base=$(basename "$0")
@@ -20,10 +21,10 @@ Options:
 runhemisphere() {
 	log=logs/$subj.surface.$h-hemisphere.log
 	err=logs/$subj.surface.$h-hemisphere.err
-	echo "$@"
+	run echo "$*"
 	"$@" >$log 2>$err
 	if [ ! $? -eq 0 ]; then
-		echo "failed: see log files $log , $err for details"
+		run echo "failed: see log files $log , $err for details"
 		exit 1
 	fi
 }
@@ -96,11 +97,27 @@ fi
 # JC: removed threading here
 # the speedup was tiny and it stopped us stopping on errors
 # reimplement with gnu parallel, perhaps
-for hi in {0..1}; do
-	h=${Hemi[$hi]}
-	runhemisphere $codedir/process-surfaces-hemisphere.sh $subj $h $segdir $outvtk $outwb $outtmp &
-done
-wait
+
+if [ "${threads:-1}" -gt 1 ] && [ "${DHCP_PIPELINE_PARALLEL:-1}" = 1 ]; then
+	for hi in {0..1}; do
+		h=${Hemi[$hi]}
+		export subj h
+		typeset -fx runhemisphere
+
+		runhemisphere $codedir/process-surfaces-hemisphere.sh $subj $h $segdir $outvtk $outwb $outtmp &
+		pids+=($!)
+		run "Started runhemisphere $codedir/process-surfaces-hemisphere.sh $subj $h $segdir $outvtk $outwb $outtmp on pid $!"
+	done
+
+	for pid in "${pids[@]}"; do
+		wait "$pid" || { run "ERROR: runhemisphere (PID $pid) failed"; exit 1; }
+	done
+else
+	for hi in {0..1}; do
+		h=${Hemi[$hi]}
+		runhemisphere $codedir/process-surfaces-hemisphere.sh $subj $h $segdir $outvtk $outwb $outtmp &
+	done
+fi
 
 # create files for both hemispheres for workbench
 if [ ! -f $outwb/$subj.sulc.native.dscalar.nii ]; then
@@ -164,17 +181,38 @@ fi
 run cd $outwb
 rm -f $subj.native.wb.spec
 
-for hi in {0..1}; do
-	h=${Hemi[$hi]}
-	C=${Cortex[$hi]}
+if [ "${threads:-1}" -gt 1 ] && [ "${DHCP_PIPELINE_PARALLEL:-1}" = 1 ]; then
+	for hi in {0..1}; do
+		h=${Hemi[$hi]}
+		C=${Cortex[$hi]}
 
-	for surf in "${Surf[@]}"; do
-		if [ -f $subj.$h.$surf.native.surf.gii ]; then
-			run wb_command -add-to-spec-file $subj.native.wb.spec $C $subj.$h.$surf.native.surf.gii &
-		fi
+		for surf in "${Surf[@]}"; do
+			if [ -f $subj.$h.$surf.native.surf.gii ]; then
+				export subj
+
+				run wb_command -add-to-spec-file $subj.native.wb.spec $C $subj.$h.$surf.native.surf.gii &
+				pids+=($!)
+				run "Started wb_command -add-to-spec-file $subj.native.wb.spec $C $subj.$h.$surf.native.surf.gii on pid $!"
+			fi
+		done
 	done
-done
-wait
+
+	for pid in "${pids[@]}"; do
+		wait "$pid" || { run "ERROR: runhemisphere (PID $pid) failed"; exit 1; }
+	done
+else
+
+	for hi in {0..1}; do
+		h=${Hemi[$hi]}
+		C=${Cortex[$hi]}
+
+		for surf in "${Surf[@]}"; do
+			if [ -f $subj.$h.$surf.native.surf.gii ]; then
+				run wb_command -add-to-spec-file $subj.native.wb.spec $C $subj.$h.$surf.native.surf.gii
+			fi
+		done
+	done
+fi
 
 C=INVALID
 run wb_command -add-to-spec-file $subj.native.wb.spec $C $subj.sulc.native.dscalar.nii
@@ -191,3 +229,5 @@ if [ -f restore/T1/$subj.nii.gz ]; then
 	run wb_command -add-to-spec-file $subj.native.wb.spec $C $subj.MyelinMap.native.dscalar.nii
 	run wb_command -add-to-spec-file $subj.native.wb.spec $C $subj.SmoothedMyelinMap.native.dscalar.nii
 fi
+
+case "${_oldflags:-}" in *a*) set +a ;; esac

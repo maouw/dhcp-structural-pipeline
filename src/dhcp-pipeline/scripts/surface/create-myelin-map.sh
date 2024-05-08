@@ -1,15 +1,11 @@
 #!/bin/bash
+_oldflags="$-"; set -a
+
+# check whether the different tools are set and load parameters
+codedir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. $codedir/../../parameters/configuration.sh
 
 subj=$1
-
-run() {
-	echo "$@"
-	"$@"
-	if [ ! $? -eq 0 ]; then
-		echo "failed"
-		exit 1
-	fi
-}
 
 T1=restore/T1/${subj}.nii.gz
 T2=restore/T2/${subj}.nii.gz
@@ -27,19 +23,22 @@ MyelinMappingSigma=$(echo "$MyelinMappingFWHM / ( 2 * ( sqrt ( 2 * l ( 2 ) ) ) )
 SurfaceSmoothingSigma=$(echo "$SurfaceSmoothingFWHM / ( 2 * ( sqrt ( 2 * l ( 2 ) ) ) )" | bc -l)
 
 mkribbons() {
+	set -ex
+	run echo "Started making ribbons on $!"
+
 	run wb_command -create-signed-distance-volume $outwb/$subj.$h.pial.native.surf.gii $T2 $outtmp/dist_$h.nii.gz
 	run fslmaths $outtmp/dist_$h.nii.gz -uthr 0 -abs -bin $outtmp/dist_$h.nii.gz
 	run fslmaths segmentations/${subj}_tissue_labels.nii.gz -mul $outtmp/dist_$h.nii.gz $outtmp/tissue_labels_$h.nii.gz
 	run mirtk padding $outtmp/tissue_labels_$h.nii.gz $outtmp/tissue_labels_$h.nii.gz $outtmp/in_$h.nii.gz 2 $CSF_label $CGM_label 0
 	run fslmaths $outtmp/in_$h.nii.gz -bin -mul $CurRibbonValueIn $outtmp/in_$h.nii.gz
 	run fslmaths $outtmp/tissue_labels_$h.nii.gz -thr $CGM_label -uthr $CGM_label -bin -mul $CurRibbonValue $outtmp/out_$h.nii.gz
-
 }
 
 if [ -f $T1 ]; then
 
 	if [ ! -f $outwb/$subj.ribbon.nii.gz ]; then
 		# create ribbon
+		pids=()
 		for h in L R; do
 			if [ $h = "L" ]; then
 				CurRibbonValue="$LeftGreyRibbonValue"
@@ -48,9 +47,20 @@ if [ -f $T1 ]; then
 				CurRibbonValue="$RightGreyRibbonValue"
 				CurRibbonValueIn="$RightGreyRibbonValueIn"
 			fi
-			mkribbons &
+			if [ "${threads:-1}" -gt 1 ] && [ "${DHCP_PIPELINE_PARALLEL:-1}" = 1 ]; then
+				mkribbons &
+				pids+=($!)
+				run echo "Started mkribbons for hemisphere $h on pid $!"
+			else
+				mkribbons
+			fi
 		done
-		wait
+		if [ "${threads:-1}" -gt 1 ] && [ "${DHCP_PIPELINE_PARALLEL:-1}" = 1 ]; then
+			for pid in "${pids[@]}"; do
+				wait "$pid" || { run echo "ERROR: mkribbons (PID $pid) failed"; exit 1; }
+			done
+		fi
+
 		run fslmaths $outtmp/in_L.nii.gz -add $outtmp/in_R.nii.gz -add $outtmp/out_L.nii.gz -add $outtmp/out_R.nii.gz $outwb/$subj.ribbon.nii.gz
 
 		for h in L R; do
@@ -83,6 +93,8 @@ if [ -f $T1 ]; then
 			run wb_command -metric-palette $outwb/$subj.$h.${Map}.native.$Ext.gii MODE_USER_SCALE -pos-user 1 1.7 -neg-user 0 0 -interpolate true -palette-name videen_style -disp-pos true -disp-neg false -disp-zero false
 		done
 	}
+
+	pids=()
 	for h in L R; do
 		if [ $h = "L" ]; then
 			ribbon="$LeftGreyRibbonValue"
@@ -91,8 +103,20 @@ if [ -f $T1 ]; then
 		fi
 
 		if [ ! -f $outwb/$subj.$h.SmoothedMyelinMap.native.func.gii ]; then
-			mksmoothmy &
+			if [ "${threads:-1}" -gt 1 ] && [ "${DHCP_PIPELINE_PARALLEL:-1}" = 1 ]; then
+				mksmoothmy &
+				pids+=($!)
+				run echo "Started mksmoothmy for hemisphere $h on pid $!"
+			else
+				mksmoothmy
+			fi
 		fi
 	done
-	wait
+	if [ "${threads:-1}" -gt 1 ] && [ "${DHCP_PIPELINE_PARALLEL:-1}" = 1 ]; then
+		for pid in "${pids[@]}"; do
+			wait "$pid" || { run echo "ERROR: mkribbons (PID $pid) failed"; exit 1; }
+		done
+	fi
 fi
+
+case "${_oldflags:-}" in *a*) set +a ;; esac

@@ -2,7 +2,9 @@
 ## Build Docker image for execution of dhcp pipelines within a Docker
 ## container with all modules and applications available in the image
 
-FROM ubuntu:20.04 as base
+FROM mambaorg/micromamba:focal as base
+
+USER root
 
 # Global system-level config
 ENV TZ=UTC \
@@ -17,15 +19,28 @@ RUN rm -f /etc/apt/apt.conf.d/docker-clean; echo 'Binary::apt::APT::Keep-Downloa
 # Acquire::Queue-Mode: Queuing mode; Queue-Mode can be one of host or access which determines how APT parallelizes outgoing connections. host means that one connection per target host will be opened, access means that one connection per URI type will be opened.
 RUN echo 'Acquire::Queue-Mode "host";' > /etc/apt/apt.conf.d/99queue
 
+ENV DHCP_PREFIX="/opt/dhcp"
+ENV DHCP_DIR="${DHCP_PREFIX}/src"
+ENV DRAWEMDIR="${DHCP_PREFIX}/share/DrawEM"
+ENV FSLDIR="${DHCP_PREFIX}/fsl"
+ENV PATH="${DHCP_PREFIX}/bin:${FSLDIR}/bin:${PATH}"
+SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
+RUN <<-EOF
+
+    mkdir -p "${DHCP_PREFIX}"/{bin,etc,lib,libexec,share} "${DHCP_DIR}" "${DRAWEMDIR}"
+    chmod -R a+rX "${DHCP_PREFIX}" "${DHCP_DIR}"
+    echo "${DHCP_PREFIX}/lib" > /etc/ld.so.conf.d/0-dhcp-pipeline.conf
+    ldconfig
+
+EOF
+
 # Install tools:
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,target=/var/lib/apt,sharing=locked --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
     <<-EOF
 
     export DEBIAN_FRONTEND=noninteractive
-    apt-get update -qq && \
+    apt-get update -qq
     apt-get install -yq --no-install-recommends \
         bc \
         ca-certificates \
@@ -36,20 +51,23 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         gpg-agent \
         gzip \
         less \
-        lz4 \
         moreutils \
+        parallel \
         nano \
         net-tools \
         openssh-client \
-        pkg-config \
-        shared-mime-info \
         tar \
         time \
         unzip \
         wget
 
-    apt-get -yq install parallel
+    curl -fsSL https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS-2023.PUB | gpg --dearmor > /usr/share/keyrings/intel-oneapi-archive-keyring.gpg
+    echo "deb [signed-by=/usr/share/keyrings/intel-oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main " > /etc/apt/sources.list.d/oneAPI.list
 
+    test -f /usr/share/doc/kitware-archive-keyring/copyright || wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null
+    echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ focal main' | tee /etc/apt/sources.list.d/kitware.list >/dev/null
+
+    apt-get update -qq
     apt-get install -yq --no-install-recommends \
         freeglut3-dev \
         libarpack2-dev \
@@ -70,9 +88,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         libgl-dev \
         libglew-dev \
         libglib2.0-dev \
+        libglm-dev \
         libglvnd-dev \
         libglx-dev \
-        libglm-dev \
         libgtest-dev \
         libhdf5-dev \
         libjpeg-dev \
@@ -94,216 +112,189 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         qtbase5-dev \
         uuid-dev \
         zlib1g-dev
-
-    { curl -fsSL https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS-2023.PUB | gpg --dearmor > /usr/share/keyrings/intel-oneapi-archive-keyring.gpg || exit 1; }
-    echo "deb [signed-by=/usr/share/keyrings/intel-oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main " > /etc/apt/sources.list.d/oneAPI.list
-
-    test -f /usr/share/doc/kitware-archive-keyring/copyright || wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null
-    echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ focal main' | tee /etc/apt/sources.list.d/kitware.list >/dev/null
-
-    apt-get update -qq
 EOF
 
-FROM base as builder-tools
+# Install tools:
+ENV ENV_NAME="${FSLDIR}"
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,target=/var/lib/apt,sharing=locked --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
     <<-EOF
+
+    # Set up micromamba and install FSL:
+    export CI=1
+    micromamba create --yes --verbose --prefix "${ENV_NAME}" --channel https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public --channel conda-forge fsl-avwutils
+    micromamba clean --yes --prefix "${ENV_NAME}" --all
+    micromamba clean --yes --all
+    micromamba activate
+    micromamba env list >&2
+EOF
+
+# Install build tools:
+FROM base AS builder
+ARG MAMBA_DOCKERFILE_ACTIVATE=1
+COPY --chmod=644 src/config/compilervars.sh "${DHCP_PREFIX}/etc/compilervars.sh"
+SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,target=/var/lib/apt,sharing=locked --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
+    <<-EOF
+    
     export DEBIAN_FRONTEND=noninteractive
     apt-get install -yq \
         build-essential \
         cmake \
+        intel-hpckit-2023.2.0 \
         libarchive13 \
         libtool \
         ninja-build
+
+        cmake_dir="$(find /usr/share -maxdepth 1 -maxdepth 1 -follow -name 'cmake-*.*' | sort -V | head -n 1 || true)"
+
+        [ -z "${cmake_dir:-}" ] || { echo "ERROR: cmake directory not found in /usr/share" >&2; exit 1; }
+        ln -sv "${cmake_dir}" /opt/build/cmake-dir
 EOF
 
-FROM builder-tools as builder-intel
-SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
-    <<-EOF
-
-    export DEBIAN_FRONTEND=noninteractive
-    apt-get install -yq intel-hpckit-2023.2.0
-    apt-get install -yq intel-oneapi-python=2023.2.0-49420
-EOF
-
-# Install headers and libraries:
-FROM builder-intel as builder-environment
-SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
-ENV PATH="/opt/dhcp/bin:${PATH}"
-COPY --chmod=644 parameters/compilervars.sh /opt/dhcp/etc/compilervars.sh
-RUN <<-EOF
-
-    mkdir -p /opt/dhcp/{bin,etc,lib,libexec,src,share}
-    chmod -R a+rX /opt/dhcp
-    echo /opt/dhcp/lib > /etc/ld.so.conf.d/0-dhcp-pipeline.conf
-    ldconfig
-EOF
 
 # Start build:
-FROM builder-environment as builder-vtk
+FROM builder AS build-vtk
+ARG MAMBA_DOCKERFILE_ACTIVATE=1
 WORKDIR /opt/build/vtk
 ADD --link --keep-git-dir=true https://github.com/Kitware/VTK.git#v8.2.0 src
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 RUN <<-EOF
-    (cd src; git submodule update --init --recursive;)
 
     mkdir -p build && cd build
-
-    export MKLROOT="$(source /opt/intel/oneapi/setvars.sh >/dev/null 2>&1; echo "${MKLROOT:-}")"
-    export __INTEL_POST_CFLAGS="-std=c++11  -L${MKLROOT}/lib/intel64 -lmkl_intel_lp64 -lmkl_intel_thread -lmkl_core -liomp5 -lpthread -lm -ldl -wd1890"
-    source "/opt/dhcp/etc/compilervars.sh" 
-
+    source "${DHCP_PREFIX}/etc/compilervars.sh"
+    set_compiler_flags "-wd1890" "-std=c++11 ${INTEL_MKL_OPENMP_STATIC_FLAGS}"
     cmake -Wno-dev -GNinja \
-            -D BUILD_DOCUMENTATION=OFF \
-            -D BUILD_SHARED_LIBS=ON \
-            -D BUILD_TESTING=OFF \
-            -D CMAKE_BUILD_TYPE=Release \
-            -D CMAKE_C_COMPILER=icc \
-            -D CMAKE_CXX_COMPILER=icpc \
-            -D CMAKE_CXX_EXTENSIONS=OFF \
             -D CMAKE_CXX_STANDARD=11 \
-            -D CMAKE_CXX_STANDARD_REQUIRED=ON \
-            -D CMAKE_INSTALL_PREFIX="/opt/dhcp" \
-            -D CMAKE_PREFIX_PATH="/opt/dhcp:${CMAKE_PREFIX_PATH:-}" \
-            -D EIGEN_USE_MKL=ON \
-            -D EIGEN_USE_MKL_VML=ON \
-            -D Module_vtkAcceleratorsVTKm=ON \
-            -D Module_vtkCommonCore=ON \
-            -D Module_vtkCommonDataModel=ON \
-            -D Module_vtkCommonExecutionModel=ON \
-            -D Module_vtkFiltersCore=ON \
-            -D Module_vtkFiltersFlowPaths=ON \
-            -D Module_vtkFiltersGeneral=ON \
-            -D Module_vtkFiltersGeometry=ON \
-            -D Module_vtkFiltersHybrid=ON \
-            -D Module_vtkFiltersModeling=ON \
-            -D Module_vtkFiltersParallel=ON \
-            -D Module_vtkFiltersSources=ON \
-            -D Module_vtkImagingCore=ON \
-            -D Module_vtkImagingStencil=ON \
-            -D Module_vtkIOGeometry=ON \
-            -D Module_vtkIOImage=ON \
-            -D Module_vtkIOLegacy=ON \
-            -D Module_vtkIOParallel=ON \
-            -D Module_vtkIOPLY=ON \
-            -D Module_vtkIOXML=ON \
-            -D Module_vtkParallelCore=ON \
-            -D VTK_Group_Qt=OFF \
-            -D VTK_Group_Rendering=OFF \
-            -D VTK_Group_StandAlone=OFF \
-            -D VTK_Group_Web=OFF \
+            -D CMAKE_CXX_EXTENSIONS:BOOL=OFF \
+            -D BUILD_DOCUMENTATION:BOOL=OFF \
+            -D BUILD_SHARED_LIBS:BOOL=ON \
+            -D BUILD_TESTING:BOOL=OFF \
+            -D EIGEN_USE_MKL:BOOL=ON \
+            -D EIGEN_USE_MKL_ALL:BOOL=ON \
+            -D VTK_USE_SYSTEM_EIGEN:BOOL=ON \
+            -D VTK_USE_SYSTEM_EXPAT:BOOL=ON \
+            -D VTK_USE_SYSTEM_HDF5:BOOL=ON \
+            -D VTK_USE_SYSTEM_JPEG:BOOL=ON \
+            -D VTK_USE_SYSTEM_JSONCPP:BOOL=ON \
+            -D VTK_USE_SYSTEM_LZ4:BOOL=ON \
+            -D VTK_USE_SYSTEM_NETCDF:BOOL=ON \
+            -D VTK_USE_SYSTEM_PNG:BOOL=ON \
+            -D VTK_USE_SYSTEM_TIFF:BOOL=ON \
             -D VTK_RENDERING_BACKEND="None" \
             -D VTK_SMP_IMPLEMENTATION_TYPE=OPENMP \
-            -D VTK_USE_SYSTEM_EIGEN=OFF \
-            -D VTK_USE_SYSTEM_EXPAT=ON \
-            -D VTK_USE_SYSTEM_HDF5=ON \
-            -D VTK_USE_SYSTEM_JPEG=ON \
-            -D VTK_USE_SYSTEM_JSONCPP=ON \
-            -D VTK_USE_SYSTEM_LZ4=ON \
-            -D VTK_USE_SYSTEM_NETCDF=ON \
-            -D VTK_USE_SYSTEM_PNG=ON \
-            -D VTK_USE_SYSTEM_TIFF=ON \
-            -D VTK_WRAP_PYTHON=OFF \
-            -D VTKm_ENABLE_CUDA=OFF \
-            -D VTKm_ENABLE_OPENMP=ON \
-            -D VTKm_ENABLE_RENDERING=OFF \
+            -D VTK_WRAP_PYTHON:BOOL=OFF \
+            -D VTKm_ENABLE_CUDA:BOOL=OFF \
+            -D VTKm_ENABLE_OPENMP:BOOL=ON \
+            -D VTKm_ENABLE_RENDERING:BOOL=OFF \
+            -D VTK_Group_Qt:BOOL=OFF \
+            -D VTK_Group_Rendering:BOOL=OFF \
+            -D VTK_Group_StandAlone:BOOL=OFF \
+            -D VTK_Group_Web:BOOL=OFF \
+            -D Module_vtkAcceleratorsVTKm:BOOL=ON \
+            -D Module_vtkCommonCore:BOOL=ON \
+            -D Module_vtkCommonDataModel:BOOL=ON \
+            -D Module_vtkCommonExecutionModel:BOOL=ON \
+            -D Module_vtkFiltersCore:BOOL=ON \
+            -D Module_vtkFiltersFlowPaths:BOOL=ON \
+            -D Module_vtkFiltersGeneral:BOOL=ON \
+            -D Module_vtkFiltersGeometry:BOOL=ON \
+            -D Module_vtkFiltersHybrid:BOOL=ON \
+            -D Module_vtkFiltersModeling:BOOL=ON \
+            -D Module_vtkFiltersParallel:BOOL=ON \
+            -D Module_vtkFiltersSources:BOOL=ON \
+            -D Module_vtkImagingCore:BOOL=ON \
+            -D Module_vtkImagingStencil:BOOL=ON \
+            -D Module_vtkIOGeometry:BOOL=ON \
+            -D Module_vtkIOImage:BOOL=ON \
+            -D Module_vtkIOLegacy:BOOL=ON \
+            -D Module_vtkIOParallel:BOOL=ON \
+            -D Module_vtkIOPLY:BOOL=ON \
+            -D Module_vtkIOXML:BOOL=ON \
+            -D Module_vtkParallelCore:BOOL=ON \
             ../src || { tail -v -n +0 CMakeFiles/*.log || true; exit 1; }
     cmake --build .
     cmake --install .
 EOF
 
-FROM builder-vtk as builder-itk
+FROM build-vtk AS build-itk
+ARG MAMBA_DOCKERFILE_ACTIVATE=1
 WORKDIR /opt/build/itk
 ADD --keep-git-dir=true https://github.com/InsightSoftwareConsortium/ITK.git#v5.4rc04 src
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 RUN <<-EOF
-    (cd src && git submodule update --init --recursive)
-
-    export MKLROOT="$(source /opt/intel/oneapi/setvars.sh >/dev/null 2>&1; echo "${MKLROOT:-}")"
 
     mkdir -p build && cd build
-
-    export __INTEL_POST_CFLAGS="-std=c++17 -L${MKLROOT}/lib/intel64 -lmkl_intel_lp64 -lmkl_tbb_thread -lmkl_core -lpthread -lm -ldl"
-
-    source "/opt/dhcp/etc/compilervars.sh" 
-
+    source "${DHCP_PREFIX}/etc/compilervars.sh"
+    set_compiler_flags "" "-std=c++17 ${INTEL_MKL_TBB_STATIC_FLAGS}"
     cmake -Wno-dev -GNinja \
-            -D BUILD_DOCUMENTATION=OFF \
-            -D BUILD_EXAMPLES=OFF \
-            -D BUILD_SHARED_LIBS=ON \
-            -D BUILD_TESTING=OFF \
-            -D CMAKE_BUILD_TYPE=Release \
-            -D CMAKE_C_COMPILER=icc \
-            -D CMAKE_CXX_COMPILER=icpc \
             -D CMAKE_CXX_STANDARD=17 \
-            -D CMAKE_CXX_STANDARD_REQUIRED=ON \
+            -D CMAKE_CXX_EXTENSIONS:BOOL=OFF \
+            -D BUILD_DOCUMENTATION:BOOL=OFF \
+            -D BUILD_EXAMPLES:BOOL=OFF \
+            -D BUILD_SHARED_LIBS:BOOL=ON \
+            -D BUILD_TESTING:BOOL=OFF \
+            -D EIGEN_USE_MKL:BOOL=ON \
+            -D EIGEN_USE_MKL_ALL:BOOL=ON \
             -D CMAKE_CXX_VISIBILITY_PRESET="default" \
-            -D CMAKE_INSTALL_PREFIX="/opt/dhcp" \
-            -D CMAKE_PREFIX_PATH="/opt/dhcp:${CMAKE_PREFIX_PATH:-}" \
-            -D EIGEN3_INCLUDE_DIR=/opt/dhcp/include/vtk-8.2/vtkeigen/eigen \
-            -D ITK_BUILD_DEFAULT_MODULES=OFF \
+            -D ITK_BUILD_DEFAULT_MODULES:BOOL=OFF \
             -D ITK_C_WARNING_FLAGS="-Wno-uninitialized -Wno-unused-parameter -wd1268 -wd981 -wd383 -wd1418 -wd1419 -wd2259 -wd1572 -wd424 -Wno-long-double -Wcast-align -Wdisabled-optimization -Wextra -Wformat=2 -Winvalid-pch -Wno-format-nonliteral -Wpointer-arith -Wshadow -Wunused -Wwrite-strings -Wno-strict-overflow" \
             -D ITK_CXX_WARNING_FLAGS="-wd1268 -wd981 -wd383 -wd1418 -wd1419 -wd2259 -wd1572 -wd424  -Wno-long-double -Wcast-align -Wdisabled-optimization -Wextra -Wformat=2 -Winvalid-pch -Wno-format-nonliteral -Wpointer-arith -Wshadow -Wunused -Wwrite-strings -Wno-strict-overflow -Wno-deprecated -Wno-invalid-offsetof -Wno-undefined-var-template -Woverloaded-virtual -Wctad-maybe-unsupported -Wstrict-null-sentinel" \
-            -D ITK_TEMPLATE_VISIBILITY_DEFAULT=ON \
-            -D ITK_USE_MKL=ON \
-            -D ITK_USE_SYSTEM_DCMTK=ON \
-            -D ITK_USE_SYSTEM_EIGEN=ON \
-            -D ITK_USE_SYSTEM_EXPAT=ON \
-            -D ITK_USE_SYSTEM_FFTW=ON \
-            -D ITK_USE_SYSTEM_HDF5=ON \
-            -D ITK_USE_SYSTEM_JPEG=ON \
-            -D ITK_USE_SYSTEM_MINC=OFF \
-            -D ITK_USE_SYSTEM_PNG=ON \
-            -D ITK_USE_SYSTEM_TIFF=ON \
-            -D ITK_USE_SYSTEM_ZLIB=ON \
-            -D ITK_USE_TBB=ON \
-            -D ITKGroup_Core=OFF \
-            -D Module_ITKBiasCorrection=ON \
-            -D Module_ITKCommon=ON \
-            -D Module_ITKImageGrid=ON \
-            -D Module_ITKImageIntensity=ON \
-            -D Module_ITKImageStatistics=ON \
-            -D Module_ITKIOCSV=ON \
-            -D Module_ITKIOHDF5=ON \
-            -D Module_ITKIOImageBase=ON \
-            -D Module_ITKIOJPEG=ON \
-            -D Module_ITKIOMesh=ON \
-            -D Module_ITKIOMeshBase=ON \
-            -D Module_ITKIOMeshGifti=ON \
-            -D Module_ITKIOMeshOBJ=ON \
-            -D Module_ITKIOMeshOFF=ON \
-            -D Module_ITKIOMeshVTK=ON \
-            -D Module_ITKIOMINC=ON \
-            -D Module_ITKIONIFTI=ON \
-            -D Module_ITKIOPNG=ON \
-            -D Module_ITKIORAW=ON \
-            -D Module_ITKIOTIFF=ON \
-            -D Module_ITKIOTransformBase=ON \
-            -D Module_ITKTransformFactory=ON \
-            -D Module_ITKIOTransformHDF5=ON \
-            -D Module_ITKIOTransformInsightLegacy=ON \
-            -D Module_ITKIOVTK=ON \
-            -D Module_ITKIOXML=ON \
-            -D Module_ITKTBB=ON \
-            -D Module_ITKTestKernel=OFF \
-            -D Module_ITKThresholding=ON \
-            -D Module_ITKTransform=ON \
+            -D ITK_TEMPLATE_VISIBILITY_DEFAULT:BOOL=ON \
+            -D ITK_USE_MKL:BOOL=ON \
+            -D ITK_USE_SYSTEM_DCMTK:BOOL=ON \
+            -D ITK_USE_SYSTEM_EIGEN:BOOL=ON \
+            -D ITK_USE_SYSTEM_EXPAT:BOOL=ON \
+            -D ITK_USE_SYSTEM_FFTW:BOOL=ON \
+            -D ITK_USE_SYSTEM_HDF5:BOOL=ON \
+            -D ITK_USE_SYSTEM_JPEG:BOOL=ON \
+            -D ITK_USE_SYSTEM_MINC:BOOL=OFF \
+            -D ITK_USE_SYSTEM_PNG:BOOL=ON \
+            -D ITK_USE_SYSTEM_TIFF:BOOL=ON \
+            -D ITK_USE_SYSTEM_ZLIB:BOOL=ON \
+            -D ITK_USE_TBB:BOOL=ON \
+            -D ITKGroup_Core:BOOL=OFF \
+            -D Module_ITKBiasCorrection:BOOL=ON \
+            -D Module_ITKCommon:BOOL=ON \
+            -D Module_ITKImageGrid:BOOL=ON \
+            -D Module_ITKImageIntensity:BOOL=ON \
+            -D Module_ITKImageStatistics:BOOL=ON \
+            -D Module_ITKIOCSV:BOOL=ON \
+            -D Module_ITKIOHDF5:BOOL=ON \
+            -D Module_ITKIOImageBase:BOOL=ON \
+            -D Module_ITKIOJPEG:BOOL=ON \
+            -D Module_ITKIOMesh:BOOL=ON \
+            -D Module_ITKIOMeshBase:BOOL=ON \
+            -D Module_ITKIOMeshGifti:BOOL=ON \
+            -D Module_ITKIOMeshOBJ:BOOL=ON \
+            -D Module_ITKIOMeshOFF:BOOL=ON \
+            -D Module_ITKIOMeshVTK:BOOL=ON \
+            -D Module_ITKIOMINC:BOOL=ON \
+            -D Module_ITKIONIFTI:BOOL=ON \
+            -D Module_ITKIOPNG:BOOL=ON \
+            -D Module_ITKIORAW:BOOL=ON \
+            -D Module_ITKIOTIFF:BOOL=ON \
+            -D Module_ITKIOTransformBase:BOOL=ON \
+            -D Module_ITKTransformFactory:BOOL=ON \
+            -D Module_ITKIOTransformHDF5:BOOL=ON \
+            -D Module_ITKIOTransformInsightLegacy:BOOL=ON \
+            -D Module_ITKIOVTK:BOOL=ON \
+            -D Module_ITKIOXML:BOOL=ON \
+            -D Module_ITKTBB:BOOL=ON \
+            -D Module_ITKTestKernel:BOOL=OFF \
+            -D Module_ITKThresholding:BOOL=ON \
+            -D Module_ITKTransform:BOOL=ON \
         ../src || { tail -v -n +0 CMakeFiles/*.log || true; exit 1; }
     cmake --build .
     cmake --install .
 EOF
 
-FROM builder-itk as builder-mirtk
+FROM build-itk AS build-mirtk
+ARG MAMBA_DOCKERFILE_ACTIVATE=1
 WORKDIR /opt/build/mirtk
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 ADD --link --keep-git-dir=true https://github.com/BioMedIA/MIRTK.git#d0722b291597f2c4b1fbb9f929711af59573de58 src
-COPY --link src-ext/antsCommandLineOption.h antsCommandLineOption.h
-ENV DRAWEMDIR=/opt/dhcp/share/DrawEM
+COPY --link src/ext/antsCommandLineOption.h antsCommandLineOption.h
 RUN <<-EOF
 
     cd src
@@ -312,215 +303,161 @@ RUN <<-EOF
     cd Packages/DrawEM
     git fetch --tags origin
     git checkout v1.2.1
-    cp -v /opt/build/mirtk/antsCommandLineOption.h ThirdParty/ANTs/
+    mv /opt/build/mirtk/antsCommandLineOption.h ThirdParty/ANTs/
     # sed -Ei 's/(^.*\bMIRTK_Common_EXPORT\b.*\btbb_scheduler.*$)/\/\/ \1/g' Modules/Common/include/mirtk/Parallel.h
     # sed -Ei 's/(^.*tbb::task_scheduler_init.*$)/\/\/ \1/g' Modules/Common/include/mirtk/Parallel.h
     # sed -Ei 's/(^.*tbb[/]task_scheduler_init.h.*$)/\/\/ \1/g' Modules/Common/include/mirtk/Parallel.h
     
-    ln -s /opt/dhcp/include/vtk-8.2/vtkeigen/eigen /opt/dhcp/include/vtk-8.2/vtkeigen/Eigen
-    touch /opt/dhcp/include/vtk-8.2/vtkeigen/signature_of_eigen3_matrix_library
     cd /opt/build/mirtk
-    mkdir -p build && cd build
 
-    export MKLROOT="$(source /opt/intel/oneapi/setvars.sh >/dev/null 2>&1; echo "${MKLROOT:-}")"
-    export __INTEL_POST_CFLAGS="-std=c++17 -L${MKLROOT}/lib/intel64 -lmkl_intel_lp64 -lmkl_tbb_thread -lmkl_core -lpthread -lm -ldl"
-    source "/opt/dhcp/etc/compilervars.sh"
+    mkdir -p build && cd build
+    source "${DHCP_PREFIX}/etc/compilervars.sh"
+    set_compiler_flags "" "-std=c++17 ${INTEL_MKL_TBB_STATIC_FLAGS}"
     cmake -Wno-dev -GNinja \
-            -D BUILD_CHANGELOG=OFF \
-            -D BUILD_DOCUMENTATION=OFF \
-            -D BUILD_EXAMPLES=OFF \
-            -D BUILD_SHARED_LIBS=ON \
-            -D BUILD_TESTING=OFF \
-            -D CMAKE_BUILD_TYPE=Release \
-            -D CMAKE_C_COMPILER=icc \
-            -D CMAKE_CXX_COMPILER=icpc \
             -D CMAKE_CXX_STANDARD=17 \
-            -D CMAKE_CXX_STANDARD_REQUIRED=ON \
-            -D CMAKE_INSTALL_PREFIX="/opt/dhcp" \
-            -D CMAKE_PREFIX_PATH="/opt/dhcp:${CMAKE_PREFIX_PATH:-}" \
-            -D DEPENDS_ITK_DIR="/opt/dhcp" \
-            -D DEPENDS_TBB_DIR="${TBBROOT}" \
-            -D DEPENDS_Eigen3_DIR=/opt/dhcp/include/vtk-8.2/vtkeigen \
-            -D DEPENDS_VTK_DIR="/opt/dhcp" \
-            -D EIGEN3_INCLUDE_DIR=/opt/dhcp/include/vtk-8.2/vtkeigen \
-            -D ITK_DIR="/opt/dhcp" \
-            -D MODULE_Deformable=ON \
-            -D MODULE_DrawEM=ON \
-            -D USE_SYSTEM_EIGEN=ON \
-            -D VTK_DIR="/opt/dhcp" \
-            -D WITH_EIGEN3=ON \
-            -D WITH_FLANN=ON \
-            -D WITH_ITK=ON \
-            -D WITH_MATLAB=OFF \
-            -D WITH_TBB=ON \
-            -D WITH_VTK=ON \
+            -D CMAKE_CXX_EXTENSIONS:BOOL=OFF \
+            -D BUILD_CHANGELOG:BOOL=OFF \
+            -D BUILD_DOCUMENTATION:BOOL=OFF \
+            -D BUILD_EXAMPLES:BOOL=OFF \
+            -D BUILD_CHANGELOG:BOOL=OFF \
+            -D BUILD_SHARED_LIBS:BOOL=ON \
+            -D BUILD_TESTING:BOOL=OFF \
+            -D EIGEN_USE_MKL:BOOL=ON \
+            -D EIGEN_USE_MKL_ALL:BOOL=ON \
+            -D USE_SYSTEM_EIGEN:BOOL=ON \
+            -D WITH_EIGEN3:BOOL=ON \
+            -D WITH_FLANN:BOOL=ON \
+            -D WITH_ITK:BOOL=ON \
+            -D WITH_MATLAB:BOOL=OFF \
+            -D WITH_TBB:BOOL=ON \
+            -D WITH_VTK:BOOL=ON \
+            -D DEPENDS_ITK_DIR="${DHCP_PREFIX}" \
+            -D DEPENDS_VTK_DIR="${DHCP_PREFIX}" \
+            -D ITK_DIR="${DHCP_PREFIX}" \
+            -D VTK_DIR="${DHCP_PREFIX}" \
+            -D MODULE_Deformable:BOOL=ON \
+            -D MODULE_DrawEM:BOOL=ON \
         ../src || { tail -v -n +0 CMakeFiles/*.log || true; exit 1; }
     cmake --build .
     cmake --install .
 
     cd /opt/build/mirtk
     mkdir -p "${DRAWEMDIR}" && cp -Rv /opt/build/mirtk/src/Packages/DrawEM/atlases "${DRAWEMDIR}"
+
     cp -Rv src/Packages/DrawEM/label_names "${DRAWEMDIR}"
     cp -Rv src/Packages/DrawEM/parameters "${DRAWEMDIR}"
     cp -Rv src/Packages/DrawEM/scripts "${DRAWEMDIR}"
 EOF
 
 
-FROM builder-mirtk as builder-workbench
+FROM build-mirtk AS build-workbench
+ARG MAMBA_DOCKERFILE_ACTIVATE=1
 WORKDIR /opt/build/workbench
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 ADD --link --keep-git-dir=true https://github.com/Washington-University/workbench.git#f0925edfd37db3808794a4df6355b18c80f49a04 src
-COPY src-ext/NiftiHeader.cxx /opt/build/workbench/src/src/Nifti/NiftiHeader.cxx
-COPY src-ext/FindQwt.cmake /opt/build/workbench/FindQwt.cmake
+COPY src/ext/NiftiHeader.cxx /opt/build/workbench/src/src/Nifti/NiftiHeader.cxx
+COPY src/ext/FindQwt.cmake /opt/build/workbench/FindQwt.cmake
 RUN <<-EOF
-    
+
     sed --in-place -E 's/-openmp-link=static//g' src/src/CMakeLists.txt
     sed --in-place -E 's/DOT_USEFMA\s*0\s*[)]/DOT_USEFMA 1)/g' src/src/kloewe/dot/CMakeLists.txt
     sed --in-place -E 's/DOT_USEAVX512\s*0\s*[)]/DOT_USEAVX512 1)/g' src/src/kloewe/dot/CMakeLists.txt
     sed --in-place 's/if ((CMAKE_COMPILER_IS_GNUCC OR CLANG_FLAG) AND CMAKE_SIZEOF_VOID_P EQUAL 8)/if ((${CMAKE_CXX_COMPILER} MATCHES "^.*icpc$" OR CMAKE_COMPILER_IS_GNUCC OR CLANG_FLAG) AND CMAKE_SIZEOF_VOID_P EQUAL 8)/g' src/src/CMakeLists.txt
     sed --in-place -E '/^\s*ADD_SUBDIRECTORY\s*\(\s*(GuiQt|Qwt|Desktop|Qwt)\s*\)/d' src/src/CMakeLists.txt
     sed --in-place -E 's/PKG_CHECK_MODULES\(\s*Qwt\s+qwt\s*\)/FIND_PACKAGE(Qwt)/g' src/src/CMakeLists.txt
-
     sed --in-place -E '/^GuiQt\s*$/d' src/src/Tests/CMakeLists.txt
-
     sed --in-place -E '/^\$\{CMAKE_SOURCE_DIR\}\/GuiQt/d' src/src/Tests/CMakeLists.txt
 
-    cmake_dir="$(echo /usr/share/cmake* | head -n 1)"
-    [ -d "${cmake_dir:-}" ] || exit 1
-    cp /usr/share/quazip/FindQuaZip5.cmake "${cmake_dir}/Modules/FindQuaZip.cmake"
-    cp FindQwt.cmake "${cmake_dir}/FindQwt.cmake"
+    mkdir -p /opt/build/cmake-dir/Modules
+    cp /usr/share/quazip/FindQuaZip5.cmake /opt/build/cmake-dir/Modules/FindQuaZip.cmake
+    cp FindQwt.cmake /opt/build/cmake-dir/Modules/FindQwt.cmake
 
-    export MKLROOT="$(source /opt/intel/oneapi/setvars.sh >/dev/null 2>&1; echo "${MKLROOT:-}")"
     mkdir -p build && cd build
-    export __INTEL_POST_CFLAGS="-std=c++17 -L${MKLROOT}/lib/intel64 -lmkl_intel_lp64 -lmkl_intel_thread -lmkl_core -liomp5 -lpthread -lm -ldl -lQt5Gui -wd9"
-
-    source "/opt/dhcp/etc/compilervars.sh"
-
+    source "${DHCP_PREFIX}/etc/compilervars.sh"
+    set_compiler_flags "-wd9" "-std=c++17 ${INTEL_MKL_OPENMP_STATIC_FLAGS}  -lQt5Gui"
     cmake -Wno-dev -GNinja \
-        -D CMAKE_C_COMPILER=icc \
-        -D CMAKE_CXX_COMPILER=icpc \
-        -D CMAKE_CXX_STANDARD=17 \
-        -D CMAKE_CXX_STANDARD_REQUIRED=ON \
-        -D CMAKE_BUILD_TYPE=Release \
-        -D CMAKE_INSTALL_PREFIX="/opt/dhcp" \
-        -D CMAKE_PREFIX_PATH="/opt/dhcp:${CMAKE_PREFIX_PATH:-}" \
-        -D WORKBENCH_MESA_DIR=/usr \
-        -D WORKBENCH_USE_QT5=TRUE \
-        -D WORKBENCH_USE_SIMD=TRUE \
-        -D WORKBENCH_USE_QT5_QOPENGL_WIDGET=TRUE \
-        -D OpenGL_GL_PREFERENCE=GLVND \
+            -D CMAKE_CXX_STANDARD=17 \
+            -D CMAKE_CXX_EXTENSIONS:BOOL=OFF \
+            -D WORKBENCH_MESA_DIR=/usr \
+            -D WORKBENCH_USE_QT5=TRUE \
+            -D WORKBENCH_USE_SIMD=TRUE \
+            -D WORKBENCH_USE_QT5_QOPENGL_WIDGET=TRUE \
+            -D OpenGL_GL_PREFERENCE=GLVND \
         ../src/src
-    cmake --build . --parallel ${CMAKE_BUILD_PARALLEL_LEVEL} -- -k 1
+    cmake --build .
     ctest
     cmake --install .
 
 EOF
 
-FROM builder-workbench as builder-sphericalmesh
+FROM build-workbench AS build-sphericalmesh
+ARG MAMBA_DOCKERFILE_ACTIVATE=1
 WORKDIR /opt/build/sphericalmesh
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 ADD --link --keep-git-dir=true https://github.com/amakropoulos/SphericalMesh.git#c41824cda791b806f79b88f2b27604a2f3268d19 src
-COPY src-ext/SphericalMeshConvertToString.h /opt/build/sphericalmesh/src/include/mirtk/SphericalMeshConvertToString.h
+COPY src/ext/SphericalMeshConvertToString.h /opt/build/sphericalmesh/src/include/mirtk/SphericalMeshConvertToString.h
 RUN <<-EOF
+    
     # Fix some issues with compilation:
     sed --in-place -E  's/std::to_string/convert_to_string/g' src/include/mirtk/*.h src/src/*.cc
     sed --in-place -E 's/(^#define M.*H_*[[:space:]]*$)/\1\n#include "mirtk\/SphericalMeshConvertToString.h"\n/g' src/include/mirtk/{M2SParameters.h,M2SDiffuser.h,M2SRemesher.h,MeshToSphere.h}
 
     mkdir -p build && cd build
-
-    export MKLROOT="$(source /opt/intel/oneapi/setvars.sh >/dev/null 2>&1; echo "${MKLROOT:-}")"
-    export __INTEL_POST_CFLAGS="-std=c++17 -L${MKLROOT}/lib/intel64 -lmkl_intel_lp64 -lmkl_tbb_thread -lmkl_core -lpthread -lm -ldl"
-
-    source "/opt/dhcp/etc/compilervars.sh"
-
-    exit 0
+    source "${DHCP_PREFIX}/etc/compilervars.sh"
+    set_compiler_flags "" "-std=c++17 ${INTEL_MKL_TBB_STATIC_FLAGS}"
     cmake -Wno-dev -GNinja \
-        -D CMAKE_BUILD_TYPE=Release \
-        -D CMAKE_C_COMPILER=icc \
-        -D CMAKE_CXX_COMPILER=icpc \
-        -D CMAKE_CXX_STANDARD=17 \
-        -D CMAKE_CXX_STANDARD_REQUIRED=ON \
-        -D CMAKE_INSTALL_PREFIX="/opt/dhcp" \
-        -D CMAKE_PREFIX_PATH="/opt/dhcp:${CMAKE_PREFIX_PATH:-}" \
+            -D CMAKE_CXX_STANDARD=17 \
         ../src
     cmake --build .
     cmake --install .
-    cp bin/mesh-to-sphere /opt/dhcp/bin/mesh-to-sphere
+    install -vpDm755 bin/* "${DHCP_PREFIX}/bin"
 EOF
 
-FROM builder-sphericalmesh as builder-fsl
-ARG FSL_CONDA_ENV=fsl
-SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
-RUN <<-EOF
 
-    export MKLROOT="$(source /opt/intel/oneapi/setvars.sh >/dev/null 2>&1; echo "${MKLROOT:-}")"
-    source "/opt/dhcp/etc/compilervars.sh"
-
-    conda config --prepend channels conda-forge
-    conda config --prepend channels https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public
-    conda create -y --verbose -n "${FSL_CONDA_ENV}"  fsl-avwutils
-    conda clean --all -y
-    FSLBINS="$(conda run -n "${FSL_CONDA_ENV}" command -v fslmaths || true)"
-    test -n "${FSLBINS:-}"
-    FSLDIR="${FSLBINS%/*/*}"
-    mkdir -p /etc/fsl
-    echo "export FSLDIR=\"${FSLDIR}\"; . \${FSLDIR}/etc/fslconf/fsl.sh" > "/opt/dhcp/etc/fsl.sh"
-EOF
-
-FROM builder-fsl as builder-pipeline-applications
-WORKDIR "/opt/build/pipeline"
-COPY CMakeLists.txt src/CMakeLists.txt
-COPY applications src/applications
+FROM build-workbench AS build-pipeline-applications
+ARG MAMBA_DOCKERFILE_ACTIVATE=1
+WORKDIR "/opt/build/pipeline-applications"
+COPY src/applications /opt/build/pipeline-applications
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 RUN <<-EOF
 
     mkdir -p build && cd build
-
-    export MKLROOT="$(source /opt/intel/oneapi/setvars.sh >/dev/null 2>&1; echo "${MKLROOT:-}")"
-    export __INTEL_POST_CFLAGS="-std=c++17 -L${MKLROOT}/lib/intel64 -lmkl_intel_lp64 -lmkl_tbb_thread -lmkl_core -lpthread -lm -ldl"
-    source "/opt/dhcp/etc/compilervars.sh"
+    source "${DHCP_PREFIX}/etc/compilervars.sh"
+    set_compiler_flags "" "-std=c++17 ${INTEL_MKL_TBB_STATIC_FLAGS}"
     
     cmake -Wno-dev -GNinja \
-            -D BUILD_CHANGELOG=OFF \
-            -D BUILD_DOCUMENTATION=OFF \
-            -D BUILD_EXAMPLES=OFF \
-            -D BUILD_SHARED_LIBS=ON \
-            -D BUILD_TESTING=OFF \
+            -D BUILD_CHANGELOG:BOOL=OFF \
+            -D BUILD_DOCUMENTATION:BOOL=OFF \
+            -D BUILD_EXAMPLES:BOOL=OFF \
+            -D BUILD_SHARED_LIBS:BOOL=ON \
+            -D BUILD_TESTING:BOOL=OFF \
             -D CMAKE_BUILD_TYPE=Release \
-            -D CMAKE_C_COMPILER=icc \
-            -D CMAKE_CXX_COMPILER=icpc \
             -D CMAKE_CXX_STANDARD=17 \
-            -D CMAKE_CXX_STANDARD_REQUIRED=ON \
-            -D CMAKE_INSTALL_PREFIX="/opt/dhcp" \
-            -D CMAKE_PREFIX_PATH="/opt/dhcp:${CMAKE_PREFIX_PATH:-}" \
-            -D DEPENDS_ITK_DIR="/opt/dhcp" \
+            -D DEPENDS_ITK_DIR="${DHCP_PREFIX}" \
             -D DEPENDS_TBB_DIR="${TBBROOT}" \
-            -D DEPENDS_Eigen3_DIR=/opt/dhcp/include/vtk-8.2/vtkeigen \
-            -D DEPENDS_VTK_DIR="/opt/dhcp" \
-            -D EIGEN3_INCLUDE_DIR=/opt/dhcp/include/vtk-8.2/vtkeigen \
-            -D ITK_DIR="/opt/dhcp" \
-            -D USE_SYSTEM_EIGEN=ON \
-            -D VTK_DIR="/opt/dhcp" \
-            -D WITH_EIGEN3=ON \
-            -D WITH_FLANN=ON \
-            -D WITH_ITK=ON \
-            -D WITH_MATLAB=OFF \
-            -D WITH_TBB=ON \
+            -D DEPENDS_VTK_DIR="${DHCP_PREFIX}" \
+            -D ITK_DIR="${DHCP_PREFIX}" \
+            -D USE_SYSTEM_EIGEN:BOOL=ON \
+            -D VTK_DIR="${DHCP_PREFIX}" \
+            -D WITH_EIGEN3:BOOL=ON \
+            -D WITH_FLANN:BOOL=ON \
+            -D WITH_ITK:BOOL=ON \
+            -D WITH_MATLAB:BOOL=OFF \
+            -D WITH_TBB:BOOL=ON \
         ../src
     cmake --build .
     cmake --install .
-    install -v -Dm755 bin/* /opt/dhcp/bin
+    install -v -Dm755 bin/* ${DHCP_PREFIX}/bin
 EOF
 
-FROM builder-pipeline-applications as builder-pipeline
-WORKDIR "/opt/build/pipeline"
-COPY --chmod=a+rX dhcp-pipeline.sh version CHANGES.txt /opt/dhcp/src/
-COPY --chmod=a+rX parameters /opt/dhcp/src/parameters
-COPY --chmod=a+rX scripts /opt/dhcp/src/scripts
+FROM build-pipeline-applications AS build-pipeline
+ARG MAMBA_DOCKERFILE_ACTIVATE=1
+WORKDIR "${DHCP_DIR}"
+COPY --chmod=a+rX src/dhcp-pipeline "${DHCP_DIR}"
 COPY ldconfig-intel.conf /etc/ld.so.conf.d/0-intel.conf
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 RUN <<-EOF
-
-    ln -s "${DRAWEMDIR}/atlases" /opt/dhcp/src/atlases
+    
+    ln -sv "${DRAWEMDIR}/atlases" ${DHCP_DIR}/atlases
     ldconfig
 EOF

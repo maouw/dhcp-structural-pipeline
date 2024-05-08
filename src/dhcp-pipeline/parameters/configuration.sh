@@ -3,14 +3,14 @@ export PS4='+ $(date -Is) <${BASH_SOURCE[0]:-???}:${LINENO:-???}> '
 set -x
 
 # local directories
-export parameters_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+export parameters_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export code_dir=$parameters_dir/..
 
 # setup path from installation
-[ ! -f $parameters_dir/path.sh ] || . $parameters_dir/path.sh
+[ ! -f "$parameters_dir/path.sh" ] || . "$parameters_dir/path.sh"
 
 # cortical structures of labels file
-export cortical_structures=`cat $DRAWEMDIR/parameters/cortical.csv`
+export cortical_structures="$(cat $DRAWEMDIR/parameters/cortical.csv)"
 
 # lookup table used with the wb_command to load labels
 export LUT=$DRAWEMDIR/parameters/segAllLut.txt
@@ -41,27 +41,26 @@ export registration_config_template=$parameters_dir/ireg.cfg
 export surface_recon_config=$parameters_dir/recon-neonatal-cortex.cfg
 
 # log function
-run()
-{
-  echo "$@"
-  "$@"
-  if [ ! $? -eq 0 ]; then
-    echo "$@ : failed"
-    exit 1
-  fi
-    saved_opts="$-"
-    set +x
-    _run_log_ctx='%s <%s:%s> RUN %s' "$(date -Is)" "${BASH_SOURCE[0]:-???}" "${LINENO:-???}" "$*"
+run() {
+	echo "$@"
+	"$@"
+	if [ ! $? -eq 0 ]; then
+		echo "ERROR: \"$*\": failed" >&2
+		exit 1
+	fi
+	saved_opts="$-"
+	set +x
+	_run_log_ctx='%s <%s:%s> RUN %s' "$(date -Is)" "${BASH_SOURCE[0]:-???}" "${LINENO:-???}" "$*"
 
-    export DEBUG_CENTRAL_LOG_LOCATION="/data/debug.log"
+	export DEBUG_CENTRAL_LOG_LOCATION="/data/debug.log"
 
-    printf '%s <%s:%s> RUN %s' "$(date -Is)" "${BASH_SOURCE[0]:-???}" "${LINENO:-???}" "$*" | tee --output-error=warn -a "${DEBUG_CENTRAL_LOG_LOCATION}"
-    "$@" || { printf '%s <%s:%s> ERROR: RUN \"%s\" failed' "$(date -Is)" "${BASH_SOURCE[0]:-???}" "${LINENO:-???}" "$*" | tee --output-error=warn -a "${DEBUG_CENTRAL_LOG_LOCATION}"; exit 1; }
-    case "${saved_opts:-}" in
-        *x*) set -x ;;
-        *) ;;
-    esac
-    return 0
+	printf '%s <%s:%s> RUN %s' "$(date -Is)" "${BASH_SOURCE[0]:-???}" "${LINENO:-???}" "$*" | tee --output-error=warn -a "${DEBUG_CENTRAL_LOG_LOCATION}"
+	"$@" || { printf '%s <%s:%s> ERROR: RUN \"%s\" failed' "$(date -Is)" "${BASH_SOURCE[0]:-???}" "${LINENO:-???}" "$*" | tee --output-error=warn -a "${DEBUG_CENTRAL_LOG_LOCATION}"; exit 1; }
+	case "${saved_opts:-}" in
+	*x*) set -x ;;
+	*) ;;
+	esac
+	return 0
 }
 
 # make run function global
