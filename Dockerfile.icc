@@ -141,9 +141,8 @@ RUN \
     echo /opt/dhcp/lib > /etc/ld.so.conf.d/dhcp-pipeline.conf
     ldconfig
 EOF
-
+ENV PATH="/opt/dhcp/bin:${PATH}"
 COPY --chmod=644 parameters/compilervars.sh /opt/dhcp/etc/compilervars.sh
-
 FROM builder-environment as builder-vtk
 WORKDIR /opt/build/vtk
 ADD --link --keep-git-dir=true https://github.com/Kitware/VTK.git#v8.2.0 src
@@ -154,23 +153,24 @@ RUN <<-EOF
     mkdir -p build && cd build
 
     export MKLROOT="$(source /opt/intel/oneapi/setvars.sh >/dev/null 2>&1; echo "${MKLROOT:-}")"
-    export __INTEL_POST_CFLAGS="-std=c++11 -Wl,--start-group ${MKLROOT}/lib/intel64/libmkl_intel_lp64.a ${MKLROOT}/lib/intel64/libmkl_intel_thread.a ${MKLROOT}/lib/intel64/libmkl_core.a -Wl,--end-group -liomp5 -lpthread -lm -ldl -qmkl=parallel -static-intel"
+    export __INTEL_POST_CFLAGS="-std=c++11  -L${MKLROOT}/lib/intel64 -lmkl_intel_lp64 -lmkl_intel_thread -lmkl_core -liomp5 -lpthread -lm -ldl -wd1890"
     source "/opt/dhcp/etc/compilervars.sh" 
 
     cmake -Wno-dev -GNinja \
-            -D BUILD_SHARED_LIBS=ON \
-            -D BUILD_TESTING=ON \
             -D BUILD_DOCUMENTATION=OFF \
+            -D BUILD_SHARED_LIBS=ON \
+            -D BUILD_TESTING=OFF \
             -D CMAKE_BUILD_TYPE=Release \
             -D CMAKE_C_COMPILER=icc \
             -D CMAKE_CXX_COMPILER=icpc \
             -D CMAKE_CXX_EXTENSIONS=OFF \
-            -D CMAKE_CXX_STANDARD_REQUIRED=ON \
             -D CMAKE_CXX_STANDARD=11 \
+            -D CMAKE_CXX_STANDARD_REQUIRED=ON \
             -D CMAKE_INSTALL_PREFIX="/opt/dhcp" \
             -D CMAKE_PREFIX_PATH="/opt/dhcp:${CMAKE_PREFIX_PATH:-}" \
             -D EIGEN_USE_MKL=ON \
             -D EIGEN_USE_MKL_VML=ON \
+            -D Module_vtkAcceleratorsVTKm=ON \
             -D Module_vtkCommonCore=ON \
             -D Module_vtkCommonDataModel=ON \
             -D Module_vtkCommonExecutionModel=ON \
@@ -191,25 +191,25 @@ RUN <<-EOF
             -D Module_vtkIOPLY=ON \
             -D Module_vtkIOXML=ON \
             -D Module_vtkParallelCore=ON \
-            -D VTK_BUILD_DOCUMENTATION=OFF \
-            -D VTK_BUILD_TESTING=ON \
             -D VTK_Group_Qt=OFF \
             -D VTK_Group_Rendering=OFF \
             -D VTK_Group_StandAlone=OFF \
             -D VTK_Group_Web=OFF \
+            -D VTK_RENDERING_BACKEND="None" \
             -D VTK_SMP_IMPLEMENTATION_TYPE=OPENMP \
-            -D VTK_USE_QT=OFF \
-            -D VTK_USE_SYSTEM_GLEW=ON \
-            -D VTK_USE_SYSTEM_LZ4=ON \
+            -D VTK_USE_SYSTEM_EIGEN=OFF \
             -D VTK_USE_SYSTEM_EXPAT=ON \
-            -D VTK_USE_SYSTEM_EIGEN=ON \
+            -D VTK_USE_SYSTEM_HDF5=ON \
             -D VTK_USE_SYSTEM_JPEG=ON \
+            -D VTK_USE_SYSTEM_JSONCPP=ON \
+            -D VTK_USE_SYSTEM_LZ4=ON \
+            -D VTK_USE_SYSTEM_NETCDF=ON \
             -D VTK_USE_SYSTEM_PNG=ON \
             -D VTK_USE_SYSTEM_TIFF=ON \
-            -D VTK_USE_SYSTEM_HDF5=ON \
-            -D VTK_USE_SYSTEM_NETCDF=ON \
-            -D VTK_USE_SYSTEM_JSONCPP=ON \
             -D VTK_WRAP_PYTHON=OFF \
+            -D VTKm_ENABLE_CUDA=OFF \
+            -D VTKm_ENABLE_OPENMP=ON \
+            -D VTKm_ENABLE_RENDERING=OFF \
             ../src || { tail -v -n +0 CMakeFiles/*.log || true; exit 1; }
     cmake --build .
     cmake --install .
@@ -217,7 +217,7 @@ EOF
 
 FROM builder-vtk as builder-itk
 WORKDIR /opt/build/itk
-ADD --keep-git-dir=true https://github.com/InsightSoftwareConsortium/ITK.git#release src
+ADD --keep-git-dir=true https://github.com/InsightSoftwareConsortium/ITK.git#v5.4rc04 src
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 RUN <<-EOF
     (cd src && git submodule update --init --recursive)
@@ -226,7 +226,7 @@ RUN <<-EOF
 
     mkdir -p build && cd build
 
-    export __INTEL_POST_CFLAGS="-std=c++17 -Wl,--start-group ${MKLROOT}/lib/intel64/libmkl_intel_lp64.a ${MKLROOT}/lib/intel64/libmkl_tbb_thread.a ${MKLROOT}/lib/intel64/libmkl_core.a -Wl,--end-group -L${TBBROOT}/lib/intel64/gcc4.8 -ltbb -lstdc++ -lpthread -lm -ldl -diag-disable=11074 -diag-disable=11076 -diag-disable=186 -diag-disable=1286 -static-intel"
+    export __INTEL_POST_CFLAGS="-std=c++17 -L${MKLROOT}/lib/intel64 -lmkl_intel_lp64 -lmkl_tbb_thread -lmkl_core -lpthread -lm -ldl"
 
     source "/opt/dhcp/etc/compilervars.sh" 
 
@@ -234,27 +234,63 @@ RUN <<-EOF
             -D BUILD_DOCUMENTATION=OFF \
             -D BUILD_EXAMPLES=OFF \
             -D BUILD_SHARED_LIBS=ON \
+            -D BUILD_TESTING=OFF \
             -D CMAKE_BUILD_TYPE=Release \
             -D CMAKE_C_COMPILER=icc \
             -D CMAKE_CXX_COMPILER=icpc \
-            -D CMAKE_CXX_STANDARD_REQUIRED=ON \
             -D CMAKE_CXX_STANDARD=17 \
+            -D CMAKE_CXX_STANDARD_REQUIRED=ON \
+            -D CMAKE_CXX_VISIBILITY_PRESET="default" \
             -D CMAKE_INSTALL_PREFIX="/opt/dhcp" \
             -D CMAKE_PREFIX_PATH="/opt/dhcp:${CMAKE_PREFIX_PATH:-}" \
-            -D ITK_Group_Bridge=ON \
-            -D ITK_Group_Compatibility=ON \
-            -D ITK_Group_Core=ON \
-            -D ITK_Group_Filtering=ON \
-            -D ITK_Group_IO=ON \
-            -D ITK_Group_Nonunit=OFF \
-            -D ITK_Group_Numerics=OFF \
-            -D ITK_Group_Remote=OFF \
-            -D ITK_Group_Video=OFF \
+            -D EIGEN3_INCLUDE_DIR=/opt/dhcp/include/vtk-8.2/vtkeigen/eigen \
+            -D ITK_BUILD_DEFAULT_MODULES=OFF \
+            -D ITK_C_WARNING_FLAGS="-Wno-uninitialized -Wno-unused-parameter -wd1268 -wd981 -wd383 -wd1418 -wd1419 -wd2259 -wd1572 -wd424 -Wno-long-double -Wcast-align -Wdisabled-optimization -Wextra -Wformat=2 -Winvalid-pch -Wno-format-nonliteral -Wpointer-arith -Wshadow -Wunused -Wwrite-strings -Wno-strict-overflow" \
+            -D ITK_CXX_WARNING_FLAGS="-wd1268 -wd981 -wd383 -wd1418 -wd1419 -wd2259 -wd1572 -wd424  -Wno-long-double -Wcast-align -Wdisabled-optimization -Wextra -Wformat=2 -Winvalid-pch -Wno-format-nonliteral -Wpointer-arith -Wshadow -Wunused -Wwrite-strings -Wno-strict-overflow -Wno-deprecated -Wno-invalid-offsetof -Wno-undefined-var-template -Woverloaded-virtual -Wctad-maybe-unsupported -Wstrict-null-sentinel" \
+            -D ITK_TEMPLATE_VISIBILITY_DEFAULT=ON \
             -D ITK_USE_MKL=ON \
-            -D ITK_USE_SYSTEM_LIBRARIES=ON \
-            -D ITK_USE_SYSTEM_TBB=OFF \
+            -D ITK_USE_SYSTEM_DCMTK=ON \
+            -D ITK_USE_SYSTEM_EIGEN=ON \
+            -D ITK_USE_SYSTEM_EXPAT=ON \
+            -D ITK_USE_SYSTEM_FFTW=ON \
+            -D ITK_USE_SYSTEM_HDF5=ON \
+            -D ITK_USE_SYSTEM_JPEG=ON \
+            -D ITK_USE_SYSTEM_MINC=OFF \
+            -D ITK_USE_SYSTEM_PNG=ON \
+            -D ITK_USE_SYSTEM_TIFF=ON \
+            -D ITK_USE_SYSTEM_ZLIB=ON \
             -D ITK_USE_TBB=ON \
-            -D Module_GDCM=OFF \
+            -D ITKGroup_Core=OFF \
+            -D Module_ITKBiasCorrection=ON \
+            -D Module_ITKCommon=ON \
+            -D Module_ITKImageGrid=ON \
+            -D Module_ITKImageIntensity=ON \
+            -D Module_ITKImageStatistics=ON \
+            -D Module_ITKIOCSV=ON \
+            -D Module_ITKIOHDF5=ON \
+            -D Module_ITKIOImageBase=ON \
+            -D Module_ITKIOJPEG=ON \
+            -D Module_ITKIOMesh=ON \
+            -D Module_ITKIOMeshBase=ON \
+            -D Module_ITKIOMeshGifti=ON \
+            -D Module_ITKIOMeshOBJ=ON \
+            -D Module_ITKIOMeshOFF=ON \
+            -D Module_ITKIOMeshVTK=ON \
+            -D Module_ITKIOMINC=ON \
+            -D Module_ITKIONIFTI=ON \
+            -D Module_ITKIOPNG=ON \
+            -D Module_ITKIORAW=ON \
+            -D Module_ITKIOTIFF=ON \
+            -D Module_ITKIOTransformBase=ON \
+            -D Module_ITKTransformFactory=ON \
+            -D Module_ITKIOTransformHDF5=ON \
+            -D Module_ITKIOTransformInsightLegacy=ON \
+            -D Module_ITKIOVTK=ON \
+            -D Module_ITKIOXML=ON \
+            -D Module_ITKTBB=ON \
+            -D Module_ITKTestKernel=OFF \
+            -D Module_ITKThresholding=ON \
+            -D Module_ITKTransform=ON \
         ../src || { tail -v -n +0 CMakeFiles/*.log || true; exit 1; }
     cmake --build .
     cmake --install .
@@ -263,31 +299,30 @@ EOF
 FROM builder-itk as builder-mirtk
 WORKDIR /opt/build/mirtk
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
+ADD --link --keep-git-dir=true https://github.com/BioMedIA/MIRTK.git#d0722b291597f2c4b1fbb9f929711af59573de58 src
+COPY --link src-ext/antsCommandLineOption.h antsCommandLineOption.h
+ENV DRAWEMDIR=/opt/dhcp/share/DrawEM
 RUN <<-EOF
-    (
-        git clone https://github.com/BioMedIA/MIRTK.git src
-        cd src
-        git reset --hard d0722b291597f2c4b1fbb9f929711af59573de58
-        git log -1
-        git submodule update --init --recursive
-        git checkout be86b02d47a7ce74b17224891e25899c30f37d74 -- CMake/Modules/FindTBB.cmake Modules/Common/include/mirtk/Parallel.h Modules/Common/include/mirtk/Parallel.h Modules/Common/src/Parallel.cc
-        # sed -Ei 's/(^.*\bMIRTK_Common_EXPORT\b.*\btbb_scheduler.*$)/\/\/ \1/g' Modules/Common/include/mirtk/Parallel.h
-        # sed -Ei 's/(^.*tbb::task_scheduler_init.*$)/\/\/ \1/g' Modules/Common/include/mirtk/Parallel.h
-        # sed -Ei 's/(^.*tbb[/]task_scheduler_init.h.*$)/\/\/ \1/g' Modules/Common/include/mirtk/Parallel.h
-        #( cd Packages/DrawEM; git fetch --tags origin; git checkout v1.2.1; )
-    )
 
+    cd src
+    git fetch origin --no-recurse-submodules
+    git checkout be86b02d47a7ce74b17224891e25899c30f37d74 -- CMake/Modules/FindTBB.cmake Modules/Common/include/mirtk/Parallel.h Modules/Common/include/mirtk/Parallel.h Modules/Common/src/Parallel.cc
+    cd Packages/DrawEM
+    git fetch --tags origin
+    git checkout v1.2.1
+    cp -v /opt/build/mirtk/antsCommandLineOption.h ThirdParty/ANTs/
+    # sed -Ei 's/(^.*\bMIRTK_Common_EXPORT\b.*\btbb_scheduler.*$)/\/\/ \1/g' Modules/Common/include/mirtk/Parallel.h
+    # sed -Ei 's/(^.*tbb::task_scheduler_init.*$)/\/\/ \1/g' Modules/Common/include/mirtk/Parallel.h
+    # sed -Ei 's/(^.*tbb[/]task_scheduler_init.h.*$)/\/\/ \1/g' Modules/Common/include/mirtk/Parallel.h
+    
+    ln -s /opt/dhcp/include/vtk-8.2/vtkeigen/eigen /opt/dhcp/include/vtk-8.2/vtkeigen/Eigen
+    touch /opt/dhcp/include/vtk-8.2/vtkeigen/signature_of_eigen3_matrix_library
+    cd /opt/build/mirtk
     mkdir -p build && cd build
-    export DEBIAN_FRONTEND=noninteractive
 
     export MKLROOT="$(source /opt/intel/oneapi/setvars.sh >/dev/null 2>&1; echo "${MKLROOT:-}")"
-
-    echo "set(CMAKE_INSTALL_OPENMP_LIBRARIES FALSE)" >> CMakeLists.txt
-
-    export __INTEL_POST_CFLAGS="-std=c++17  -Wl,--start-group ${MKLROOT}/lib/intel64/libmkl_intel_lp64.a ${MKLROOT}/lib/intel64/libmkl_tbb_thread.a ${MKLROOT}/lib/intel64/libmkl_core.a -Wl,--end-group -L${TBBROOT}/lib/intel64/gcc4.8 -ltbb -lstdc++ -lpthread -lm -ldl -diag-disable=11074 -diag-disable=11076 -diag-disable=186 -diag-disable=1286 -static-intel"
+    export __INTEL_POST_CFLAGS="-std=c++17 -L${MKLROOT}/lib/intel64 -lmkl_intel_lp64 -lmkl_tbb_thread -lmkl_core -lpthread -lm -ldl"
     source "/opt/dhcp/etc/compilervars.sh"
-    export CMAKE_INSTALL_OPENMP_LIBRARIES=FALSE
-    
     cmake -Wno-dev -GNinja \
             -D BUILD_CHANGELOG=OFF \
             -D BUILD_DOCUMENTATION=OFF \
@@ -303,10 +338,13 @@ RUN <<-EOF
             -D CMAKE_PREFIX_PATH="/opt/dhcp:${CMAKE_PREFIX_PATH:-}" \
             -D DEPENDS_ITK_DIR="/opt/dhcp" \
             -D DEPENDS_TBB_DIR="${TBBROOT}" \
+            -D DEPENDS_Eigen3_DIR=/opt/dhcp/include/vtk-8.2/vtkeigen \
             -D DEPENDS_VTK_DIR="/opt/dhcp" \
+            -D EIGEN3_INCLUDE_DIR=/opt/dhcp/include/vtk-8.2/vtkeigen \
             -D ITK_DIR="/opt/dhcp" \
             -D MODULE_Deformable=ON \
             -D MODULE_DrawEM=ON \
+            -D USE_SYSTEM_EIGEN=ON \
             -D VTK_DIR="/opt/dhcp" \
             -D WITH_EIGEN3=ON \
             -D WITH_FLANN=ON \
@@ -315,25 +353,26 @@ RUN <<-EOF
             -D WITH_TBB=ON \
             -D WITH_VTK=ON \
         ../src || { tail -v -n +0 CMakeFiles/*.log || true; exit 1; }
-    cmake --build . --parallel ${CMAKE_BUILD_PARALLEL_LEVEL} -- -k 1
+    cmake --build .
     cmake --install .
-    echo "/opt/dhcp/lib/mirtk" > /etc/ld.so.conf.d/mirtk.conf; ldconfig
+
+    cd /opt/build/mirtk
+    mkdir -p "${DRAWEMDIR}" && cp -Rv /opt/build/mirtk/src/Packages/DrawEM/atlases "${DRAWEMDIR}"
+    cp -Rv src/Packages/DrawEM/label_names "${DRAWEMDIR}"
+    cp -Rv src/Packages/DrawEM/parameters "${DRAWEMDIR}"
+    cp -Rv src/Packages/DrawEM/scripts "${DRAWEMDIR}"
 EOF
 
 
 FROM builder-mirtk as builder-workbench
 WORKDIR /opt/build/workbench
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
-ADD --link --keep-git-dir=true https://github.com/Washington-University/workbench.git src
-COPY NiftiHeader.cxx /opt/build/workbench/src/src/Nifti/NiftiHeader.cxx
-COPY FindQwt.cmake /opt/build/workbench/FindQwt.cmake
-
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
-    <<-EOF
+ADD --link --keep-git-dir=true https://github.com/Washington-University/workbench.git#f0925edfd37db3808794a4df6355b18c80f49a04 src
+COPY src-ext/NiftiHeader.cxx /opt/build/workbench/src/src/Nifti/NiftiHeader.cxx
+COPY src-ext/FindQwt.cmake /opt/build/workbench/FindQwt.cmake
+RUN <<-EOF
     
-    sed --in-place -E 's/-openmp-link=static/-qmkl=parallel/g' src/src/CMakeLists.txt
+    sed --in-place -E 's/-openmp-link=static//g' src/src/CMakeLists.txt
     sed --in-place -E 's/DOT_USEFMA\s*0\s*[)]/DOT_USEFMA 1)/g' src/src/kloewe/dot/CMakeLists.txt
     sed --in-place -E 's/DOT_USEAVX512\s*0\s*[)]/DOT_USEAVX512 1)/g' src/src/kloewe/dot/CMakeLists.txt
     sed --in-place 's/if ((CMAKE_COMPILER_IS_GNUCC OR CLANG_FLAG) AND CMAKE_SIZEOF_VOID_P EQUAL 8)/if ((${CMAKE_CXX_COMPILER} MATCHES "^.*icpc$" OR CMAKE_COMPILER_IS_GNUCC OR CLANG_FLAG) AND CMAKE_SIZEOF_VOID_P EQUAL 8)/g' src/src/CMakeLists.txt
@@ -351,9 +390,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 
     export MKLROOT="$(source /opt/intel/oneapi/setvars.sh >/dev/null 2>&1; echo "${MKLROOT:-}")"
     mkdir -p build && cd build
-    export __INTEL_POST_CFLAGS="-std=c++17  -Wl,--start-group ${MKLROOT}/lib/intel64/libmkl_intel_lp64.a ${MKLROOT}/lib/intel64/libmkl_tbb_thread.a ${MKLROOT}/lib/intel64/libmkl_core.a -Wl,--end-group -L${TBBROOT}/lib/intel64/gcc4.8 -ltbb -lstdc++ -lpthread -lm -ldl -qmkl=parallel -lQt5Gui -wd9"
+    export __INTEL_POST_CFLAGS="-std=c++17 -L${MKLROOT}/lib/intel64 -lmkl_intel_lp64 -lmkl_intel_thread -lmkl_core -liomp5 -lpthread -lm -ldl -lQt5Gui -wd9"
 
-    source "/opt/dhcp/etc/compilervars.sh"    
+    source "/opt/dhcp/etc/compilervars.sh"
 
     cmake -Wno-dev -GNinja \
         -D CMAKE_C_COMPILER=icc \
@@ -410,9 +449,6 @@ RUN <<-EOF
     cp bin/mesh-to-sphere /opt/dhcp/bin/mesh-to-sphere
 EOF
 
-#ADD --link --keep-git-dir=true https://github.com/amakropoulos/SphericalMesh.git#dhcp-v1.2 src
-#    git reset --hard c41824cda791b806f79b88f2b27604a2f3268d19
-
 FROM builder-sphericalmesh as builder-fsl
 ARG FSL_CONDA_ENV=fsl
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
@@ -432,53 +468,58 @@ RUN <<-EOF
     echo "export FSLDIR=\"${FSLDIR}\"; . \${FSLDIR}/etc/fslconf/fsl.sh" > "/opt/dhcp/etc/fsl.sh"
 EOF
 
-
-FROM builder-fsl as builder-pipeline
+FROM builder-fsl as builder-pipeline-applications
 WORKDIR "/opt/build/pipeline"
-COPY --chmod=a+rX dhcp-pipeline.sh version /opt/dhcp/src/
-COPY --chmod=a+rX parameters /opt/dhcp/src/parameters
-COPY --chmod=a+rX scripts /opt/dhcp/src/scripts
-COPY --chmod=a+rX version CHANGES.txt CMakeLists.txt /opt/build/pipeline/src/
-COPY --chmod=a+rX applications /opt/build/pipeline/src/applications
-COPY --chmod=a+rX ThirdParty /opt/build/pipeline/src/ThirdParty
+COPY CMakeLists.txt src/CMakeLists.txt
+COPY applications src/applications
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 RUN <<-EOF
 
     mkdir -p build && cd build
 
     export MKLROOT="$(source /opt/intel/oneapi/setvars.sh >/dev/null 2>&1; echo "${MKLROOT:-}")"
-    export __INTEL_POST_CFLAGS="-std=c++17 -no-cilk -static-intel"
+    export __INTEL_POST_CFLAGS="-std=c++17 -L${MKLROOT}/lib/intel64 -lmkl_intel_lp64 -lmkl_tbb_thread -lmkl_core -lpthread -lm -ldl"
     source "/opt/dhcp/etc/compilervars.sh"
     
     cmake -Wno-dev -GNinja \
+            -D BUILD_CHANGELOG=OFF \
+            -D BUILD_DOCUMENTATION=OFF \
+            -D BUILD_EXAMPLES=OFF \
+            -D BUILD_SHARED_LIBS=ON \
+            -D BUILD_TESTING=OFF \
             -D CMAKE_BUILD_TYPE=Release \
             -D CMAKE_C_COMPILER=icc \
             -D CMAKE_CXX_COMPILER=icpc \
-            -D CMAKE_CXX_STANDARD_REQUIRED=ON \
             -D CMAKE_CXX_STANDARD=17 \
+            -D CMAKE_CXX_STANDARD_REQUIRED=ON \
             -D CMAKE_INSTALL_PREFIX="/opt/dhcp" \
             -D CMAKE_PREFIX_PATH="/opt/dhcp:${CMAKE_PREFIX_PATH:-}" \
+            -D DEPENDS_ITK_DIR="/opt/dhcp" \
+            -D DEPENDS_TBB_DIR="${TBBROOT}" \
+            -D DEPENDS_Eigen3_DIR=/opt/dhcp/include/vtk-8.2/vtkeigen \
+            -D DEPENDS_VTK_DIR="/opt/dhcp" \
+            -D EIGEN3_INCLUDE_DIR=/opt/dhcp/include/vtk-8.2/vtkeigen \
+            -D ITK_DIR="/opt/dhcp" \
+            -D USE_SYSTEM_EIGEN=ON \
+            -D VTK_DIR="/opt/dhcp" \
+            -D WITH_EIGEN3=ON \
+            -D WITH_FLANN=ON \
+            -D WITH_ITK=ON \
+            -D WITH_MATLAB=OFF \
+            -D WITH_TBB=ON \
         ../src
     cmake --build .
     cmake --install .
-    install -v -Dm755 bin/*  /opt/dhcp/bin
+    install -v -Dm755 bin/* /opt/dhcp/bin
 EOF
-#    echo "export DRAWEMDIR=$DRAWEMDIR" >> $code_dir/parameters/path.sh
-#    echo "export DRAWEMDIR=$DRAWEMDIR" >> $code_dir/parameters/path.sh
-#    echo "export PATH=$pathext:"'${PATH}' >> $code_dir/parameters/path.sh
 
-# FROM builder-itk as builder-atlases
-# WORKDIR "/opt/dhcp/src"
-# ARG ATLASES_URL="https://biomedic.doc.ic.ac.uk/brain-development/downloads/dHCP/atlases-dhcp-structural-pipeline-v1.zip"
-# SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
-# RUN <<-EOF
-#     mkdir -p atlases && cd atlases
-#     aria2c -x 4 -s 2 --out=atlases.zip "${ATLASES_URL}"
-#     unzip atlases-dhcp-structural-pipeline-v1.zip -d .
-#     rm atlases-dhcp-structural-pipeline-v1.zip
-# EOF
-#cd Packages/DrawEM/atlases/src
-#unzip atlases-dhcp-structural-pipeline-v1.zip -d /opt/build/mirtk/build/Packages/DrawEM/atlases/src/atlases
-#rm atlases-dhcp-structural-pipeline-v1.zip
-#cd /opt/build/mirtk/build
-#make install
+FROM builder-pipeline-applications as builder-pipeline
+WORKDIR "/opt/build/pipeline"
+COPY --chmod=a+rX dhcp-pipeline.sh version CHANGES.txt /opt/dhcp/src/
+COPY --chmod=a+rX parameters /opt/dhcp/src/parameters
+COPY --chmod=a+rX scripts /opt/dhcp/src/scripts
+SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
+RUN <<-EOF
+
+    ln -s /opt/dhcp/share/DrawEm/atlases /opt/dhcp/src/atlases
+EOF

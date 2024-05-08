@@ -31,3 +31,13 @@ add /opt/dhcp/bin to PATH
                                           ^
           detected during instantiation of "<unnamed>::Scaling<T>::Scaling(const double &, const double &) [with T=long double]" at line 704
 
+root@2c1935676324:/opt/dhcp/lib# ldd *.so | grep 'intel' | sed -E 's/\s+\(.*$//g' | grep -o '[/].*$' | sort | uniq
+/opt/intel/oneapi/compiler/2023.2.0/linux/compiler/lib/intel64_lin/libimf.so
+/opt/intel/oneapi/compiler/2023.2.0/linux/compiler/lib/intel64_lin/libintlc.so.5
+/opt/intel/oneapi/compiler/2023.2.0/linux/compiler/lib/intel64_lin/libiomp5.so
+/opt/intel/oneapi/compiler/2023.2.0/linux/compiler/lib/intel64_lin/libirng.so
+/opt/intel/oneapi/compiler/2023.2.0/linux/compiler/lib/intel64_lin/libsvml.so
+/opt/intel/oneapi/mkl/2023.2.0/lib/intel64/libmkl_core.so.2
+/opt/intel/oneapi/mkl/2023.2.0/lib/intel64/libmkl_intel_lp64.so.2
+/opt/intel/oneapi/mkl/2023.2.0/lib/intel64/libmkl_intel_thread.so.2
+ echo $LD_LIBRARY_PATH  | tr ':' '\n' | grep -E '/opt/intel/oneapi/(tbb|mpi|ipp|ippcp)'

@@ -21,9 +21,9 @@ include(${VTK_USE_FILE})
 link_directories(Test ${VTK_LIBRARIES})
 
 # FLAGS
-if(UNIX)
-    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -std=gnu++0x")
-endif()
+#if(UNIX)
+#    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -std=gnu++0x")
+#endif()
 
 # set make output directories
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
@@ -37,5 +37,5 @@ macro(add_dhcp_executable name)
 endmacro()
 
 SUBDIRS(applications)
-SUBDIRS(ThirdParty/ANTs)
+#SUBDIRS(ThirdParty/ANTs)
 
