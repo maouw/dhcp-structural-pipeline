@@ -123,20 +123,18 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,t
     # Set up micromamba and install FSL:
     export CI=1
     micromamba create --yes --verbose --prefix "${ENV_NAME}" --channel https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public --channel conda-forge fsl-avwutils
-    micromamba clean --yes --prefix "${ENV_NAME}" --all
     micromamba clean --yes --all
-    micromamba activate
     micromamba env list >&2
 EOF
 
 # Install build tools:
 FROM base AS builder
 ARG MAMBA_DOCKERFILE_ACTIVATE=1
-COPY --chmod=644 src/config/compilervars.sh "${DHCP_PREFIX}/etc/compilervars.sh"
+WORKDIR "/opt/build"
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,target=/var/lib/apt,sharing=locked --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
     <<-EOF
-    
+
     export DEBIAN_FRONTEND=noninteractive
     apt-get install -yq \
         build-essential \
@@ -148,10 +146,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,t
 
         cmake_dir="$(find /usr/share -maxdepth 1 -maxdepth 1 -follow -name 'cmake-*.*' | sort -V | head -n 1 || true)"
 
-        [ -z "${cmake_dir:-}" ] || { echo "ERROR: cmake directory not found in /usr/share" >&2; exit 1; }
+        [ -n "${cmake_dir:-}" ] || { echo "ERROR: cmake directory not found in /usr/share" >&2; exit 1; }
         ln -sv "${cmake_dir}" /opt/build/cmake-dir
 EOF
-
+COPY --chmod=644 src/config/compilervars.sh "/opt/build/compilervars.sh"
 
 # Start build:
 FROM builder AS build-vtk
@@ -162,7 +160,7 @@ SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 RUN <<-EOF
 
     mkdir -p build && cd build
-    source "${DHCP_PREFIX}/etc/compilervars.sh"
+    source "/opt/build/compilervars.sh"
     set_compiler_flags "-wd1890" "-std=c++11 ${INTEL_MKL_OPENMP_STATIC_FLAGS}"
     cmake -Wno-dev -GNinja \
             -D CMAKE_CXX_STANDARD=11 \
@@ -225,7 +223,7 @@ SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 RUN <<-EOF
 
     mkdir -p build && cd build
-    source "${DHCP_PREFIX}/etc/compilervars.sh"
+    source "/opt/build/compilervars.sh"
     set_compiler_flags "" "-std=c++17 ${INTEL_MKL_TBB_STATIC_FLAGS}"
     cmake -Wno-dev -GNinja \
             -D CMAKE_CXX_STANDARD=17 \
@@ -311,7 +309,7 @@ RUN <<-EOF
     cd /opt/build/mirtk
 
     mkdir -p build && cd build
-    source "${DHCP_PREFIX}/etc/compilervars.sh"
+    source "/opt/build/compilervars.sh"
     set_compiler_flags "" "-std=c++17 ${INTEL_MKL_TBB_STATIC_FLAGS}"
     cmake -Wno-dev -GNinja \
             -D CMAKE_CXX_STANDARD=17 \
@@ -373,7 +371,7 @@ RUN <<-EOF
     cp FindQwt.cmake /opt/build/cmake-dir/Modules/FindQwt.cmake
 
     mkdir -p build && cd build
-    source "${DHCP_PREFIX}/etc/compilervars.sh"
+    source "/opt/build/compilervars.sh"
     set_compiler_flags "-wd9" "-std=c++17 ${INTEL_MKL_OPENMP_STATIC_FLAGS}  -lQt5Gui"
     cmake -Wno-dev -GNinja \
             -D CMAKE_CXX_STANDARD=17 \
@@ -403,7 +401,7 @@ RUN <<-EOF
     sed --in-place -E 's/(^#define M.*H_*[[:space:]]*$)/\1\n#include "mirtk\/SphericalMeshConvertToString.h"\n/g' src/include/mirtk/{M2SParameters.h,M2SDiffuser.h,M2SRemesher.h,MeshToSphere.h}
 
     mkdir -p build && cd build
-    source "${DHCP_PREFIX}/etc/compilervars.sh"
+    source "/opt/build/compilervars.sh"
     set_compiler_flags "" "-std=c++17 ${INTEL_MKL_TBB_STATIC_FLAGS}"
     cmake -Wno-dev -GNinja \
             -D CMAKE_CXX_STANDARD=17 \
@@ -422,7 +420,7 @@ SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 RUN <<-EOF
 
     mkdir -p build && cd build
-    source "${DHCP_PREFIX}/etc/compilervars.sh"
+    source "/opt/build/compilervars.sh"
     set_compiler_flags "" "-std=c++17 ${INTEL_MKL_TBB_STATIC_FLAGS}"
     
     cmake -Wno-dev -GNinja \
