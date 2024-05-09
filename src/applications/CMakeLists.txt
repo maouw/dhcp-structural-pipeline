@@ -36,6 +36,6 @@ macro(add_dhcp_executable name)
   target_link_libraries(${name} ${VTK_LIBRARIES})
 endmacro()
 
-SUBDIRS(applications)
+SUBDIRS(src)
 #SUBDIRS(ThirdParty/ANTs)
 

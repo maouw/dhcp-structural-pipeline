@@ -368,12 +368,15 @@ RUN <<-EOF
     cp /usr/share/quazip/FindQuaZip5.cmake /opt/build/cmake-dir/Modules/FindQuaZip.cmake
     cp FindQwt.cmake /opt/build/cmake-dir/Modules/FindQwt.cmake
 
+    (cd src/src/CZIlib/CZI && ln -sv eigen Eigen)
+
     mkdir -p build && cd build
+    export INTEL_OPTIMIZER_IPO=''
     source "/opt/build/compilervars.sh"
-    set_compiler_flags "-wd9" "-std=c++17 ${INTEL_MKL_OPENMP_STATIC_FLAGS}  -lQt5Gui"
+    set_compiler_flags "-wd9 -I/opt/build/workbench/src/src/CZIlib/CZI" "-std=c++17 ${INTEL_MKL_OPENMP_DYNAMIC_FLAGS}"
     cmake -Wno-dev -GNinja \
             -D CMAKE_CXX_STANDARD=17 \
-            -D CMAKE_CXX_EXTENSIONS:BOOL=OFF \
+            -D CMAKE_CXX_EXTENSIONS=OFF \
             -D WORKBENCH_MESA_DIR=/usr \
             -D WORKBENCH_USE_QT5=TRUE \
             -D WORKBENCH_USE_SIMD=TRUE \
@@ -410,36 +413,19 @@ RUN <<-EOF
 EOF
 
 
-FROM build-workbench AS build-pipeline-applications
+FROM build-sphericalmesh AS build-pipeline-applications
 ARG MAMBA_DOCKERFILE_ACTIVATE=1
 WORKDIR "/opt/build/pipeline-applications"
-COPY src/applications /opt/build/pipeline-applications
+COPY src/applications /opt/build/pipeline-applications/src
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 RUN <<-EOF
 
     mkdir -p build && cd build
     source "/opt/build/compilervars.sh"
     set_compiler_flags "" "-std=c++17 ${INTEL_MKL_TBB_STATIC_FLAGS}"
-    
+
     cmake -Wno-dev -GNinja \
-            -D BUILD_CHANGELOG:BOOL=OFF \
-            -D BUILD_DOCUMENTATION:BOOL=OFF \
-            -D BUILD_EXAMPLES:BOOL=OFF \
-            -D BUILD_SHARED_LIBS:BOOL=ON \
-            -D BUILD_TESTING:BOOL=OFF \
-            -D CMAKE_BUILD_TYPE=Release \
             -D CMAKE_CXX_STANDARD=17 \
-            -D DEPENDS_ITK_DIR="${DHCP_PREFIX}" \
-            -D DEPENDS_TBB_DIR="${TBBROOT}" \
-            -D DEPENDS_VTK_DIR="${DHCP_PREFIX}" \
-            -D ITK_DIR="${DHCP_PREFIX}" \
-            -D USE_SYSTEM_EIGEN:BOOL=ON \
-            -D VTK_DIR="${DHCP_PREFIX}" \
-            -D WITH_EIGEN3:BOOL=ON \
-            -D WITH_FLANN:BOOL=ON \
-            -D WITH_ITK:BOOL=ON \
-            -D WITH_MATLAB:BOOL=OFF \
-            -D WITH_TBB:BOOL=ON \
         ../src
     cmake --build .
     cmake --install .
@@ -450,7 +436,7 @@ FROM build-pipeline-applications AS build-pipeline
 ARG MAMBA_DOCKERFILE_ACTIVATE=1
 WORKDIR "${DHCP_DIR}"
 COPY --chmod=a+rX src/dhcp-pipeline "${DHCP_DIR}"
-COPY ldconfig-intel.conf /etc/ld.so.conf.d/0-intel.conf
+COPY src/config/ldconfig-intel.conf /etc/ld.so.conf.d/0-intel.conf
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 RUN <<-EOF
     

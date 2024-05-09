@@ -40,26 +40,26 @@ export registration_config_template=$parameters_dir/ireg.cfg
 # surface reconstuction parameters
 export surface_recon_config=$parameters_dir/recon-neonatal-cortex.cfg
 
-
 # log function
 
 run() {
-	saved_opts="$-"
+	local _run_saved_opts="$-"
 	set +x
+	_run_started="$(date +'%FT%T%z')"
+	printf -v _run_log_ctx '%s [%s] <%s:%s> run "%q"' "${_run_started}" "$!" "${BASH_SOURCE[0]:-???}" "${LINENO:-???}" "$*"
 
-	_run_log_ctx='%s <%s:%s> RUN %s' "$(date -Is)" "${BASH_SOURCE[0]:-???}" "${LINENO:-???}" "$*"
-
-	if command -v /usr/bin/time 2>/dev/null; then
-		_run_cmd=(/usr/bin/time -f '"%C" elapsed=%E user=%U system=%S cpu=%P maxrss=%M I=%If O=%Ofsout c=%c w=%w W=%W')
+	if command -v /usr/bin/time 1>/dev/null 2>&1; then
+		_run_cmd=(/usr/bin/time -f "${_run_log_ctx}: elapsed=%E user=%U system=%S cpu=%P maxrss=%M I=%If O=%Ofsout c=%c w=%w W=%W")
 	else
-		export TIMEFORMAT="\"$*\" elapsed=%RR user=%UU system=%SS cpu=%P%%"
+		export TIMEFORMAT="${_run_log_ctx}: elapsed=%RR user=%UU system=%SS cpu=%P%%"
 		_run_cmd=(time)
 	fi
 
-	printf '%s <%s:%s> RUN %s' "$(date -Is)" "${BASH_SOURCE[0]:-???}" "${LINENO:-???}" "$*" | tee --output-error=warn -a "${DEBUG_CENTRAL_LOG_LOCATION:-debug.log}"
-	"${_run_cmd[@]}" "$@" || { printf '%s <%s:%s> ERROR: RUN \"%s\" failed' "$(date -Is)" "${BASH_SOURCE[0]:-???}" "${LINENO:-???}" "$*" | tee --output-error=warn -a "${DEBUG_CENTRAL_LOG_LOCATION:-debug.log}"; exit 1; }
+	printf '%s\n' "${_run_log_ctx}" | tee --output-error=warn -a "${DEBUG_CENTRAL_LOG_LOCATION:-debug.log}"
+	/usr/bin/time -f "${_run_log_ctx}: elapsed=%E user=%U system=%S cpu=%P maxrss=%M I=%I O=%O c=%c w=%w W=%W" "$@" 2>&1 | ts "%FT%T%z" | tee --output-error=warn -a "${DEBUG_CENTRAL_LOG_LOCATION:-debug.log}" || {
+		printf 'ERROR: Failed "%s"' "${_run_log_ctx}" | ts | tee --output-error=warn -a "${DEBUG_CENTRAL_LOG_LOCATION:-debug.log}"; exit 1; }
 
-	case "${saved_opts:-}" in
+	case "${_run_saved_opts:-}" in
 	*x*) set -x ;;
 	*) ;;
 	esac
