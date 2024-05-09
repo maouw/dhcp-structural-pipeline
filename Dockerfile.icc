@@ -168,8 +168,6 @@ RUN <<-EOF
             -D BUILD_DOCUMENTATION:BOOL=OFF \
             -D BUILD_SHARED_LIBS:BOOL=ON \
             -D BUILD_TESTING:BOOL=OFF \
-            -D EIGEN_USE_MKL:BOOL=ON \
-            -D EIGEN_USE_MKL_ALL:BOOL=ON \
             -D VTK_USE_SYSTEM_EIGEN:BOOL=ON \
             -D VTK_USE_SYSTEM_EXPAT:BOOL=ON \
             -D VTK_USE_SYSTEM_HDF5:BOOL=ON \
