@@ -1,4 +1,5 @@
 #!/bin/bash
+[ "${XTRACE:-0}" = 1 ] && export PS4='+ $(date -Is) ${BASH_SOURCE[0]}:${LINENO}: ' && set -x
 
 # if FSLDIR is not defined, assume we need to read the FSL startup
 
@@ -158,6 +159,7 @@ for modality in T1 T2; do
 done
 
 # segmentation
+set -eE
 runpipeline segmentation $scriptdir/segmentation/pipeline.sh $T2 $subj $roundedAge -d $workdir -t $threads
 
 # generate some additional files
@@ -174,4 +176,4 @@ if [ $cleanup -eq 1 ]; then
 	runpipeline cleanup rm -r $workdir
 fi
 
-echo "$(date -Is) dHCP pipeline completed!"
+run echo "dHCP pipeline completed!"

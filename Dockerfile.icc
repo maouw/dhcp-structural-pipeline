@@ -436,6 +436,18 @@ FROM build-pipeline-applications AS build-pipeline
 ARG MAMBA_DOCKERFILE_ACTIVATE=1
 WORKDIR "${DHCP_DIR}"
 COPY --chmod=a+rX src/dhcp-pipeline "${DHCP_DIR}"
+COPY version ${DHCP_DIR}/version
+
+# Install extra fsl stuff:
+SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
+RUN <<-EOF
+
+    # Set up micromamba and install FSL:
+    export CI=1
+    micromamba install --yes --verbose --prefix "${ENV_NAME}" --channel https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public --channel conda-forge fsl-flirt fsl-bet2
+    micromamba clean --yes --all
+EOF
+
 SHELL ["/bin/bash", "-eEx", "-c"]
 RUN <<-EOF
 
@@ -449,7 +461,8 @@ FROM base AS final
 ARG MAMBA_DOCKERFILE_ACTIVATE=1
 WORKDIR /
 COPY --from=build-pipeline "${DHCP_PREFIX}" "${DHCP_PREFIX}"
+RUN ldconfig
 
 WORKDIR /data
-ENTRYPOINT ["${DHCP_DIR}/dhcp-pipeline.sh"]
+ENTRYPOINT ["/opt/dhcp/src/dhcp-pipeline.sh"]
 CMD ["-help"]
