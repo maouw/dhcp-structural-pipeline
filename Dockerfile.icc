@@ -449,3 +449,7 @@ FROM base AS final
 ARG MAMBA_DOCKERFILE_ACTIVATE=1
 WORKDIR /
 COPY --from=build-pipeline "${DHCP_PREFIX}" "${DHCP_PREFIX}"
+
+WORKDIR /data
+ENTRYPOINT ["${DHCP_DIR}/dhcp-pipeline.sh"]
+CMD ["-help"]
