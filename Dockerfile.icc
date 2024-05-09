@@ -457,11 +457,26 @@ RUN <<-EOF
     ldconfig
 EOF
 
+
 FROM base AS final
 ARG MAMBA_DOCKERFILE_ACTIVATE=1
 WORKDIR /
 COPY --from=build-pipeline "${DHCP_PREFIX}" "${DHCP_PREFIX}"
-RUN ldconfig
+COPY --chmod=755 --from=build-pipeline /opt/build/mirtk/build/lib/mirtk/tools/N4  "${DHCP_PREFIX}/lib/mirtk/tools/N4"
+# Install tools:
+SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,target=/var/lib/apt,sharing=locked --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
+    <<-EOF
+
+    if ! command -v dc >/dev/nul 2>&1; then
+        export DEBIAN_FRONTEND=noninteractive
+        apt-cache info dc >/dev/null 2>&1 || apt-get update -qq 
+        apt-get install -yq --no-install-recommends dc
+    fi
+    ldconfig
+    ( cd "$DRAWEMDIR" && git init && git config user.email 'nobody@example.com'; git config  user.name 'nobody'; git commit --allow-empty --allow-empty-message --no-verify -m ''; )
+    echo 'set -eE' >> "${DHCP_DIR}/parameters/configuration.sh"
+EOF
 
 WORKDIR /data
 ENTRYPOINT ["/opt/dhcp/src/dhcp-pipeline.sh"]
