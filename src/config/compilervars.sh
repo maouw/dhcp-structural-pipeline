@@ -33,7 +33,7 @@ set_compiler_flags() {
 
 	export __INTEL_PRE_CFLAGS="${__INTEL_PRE_CFLAGS:+${__INTEL_PRE_CFLAGS:-} }${1:-}"
 	# Set optimizer flags
-	export __INTEL_POST_CFLAGS="=D EIGEN_USE_MKL -D EIGEN_USE_MKL_ALL ${__INTEL_POST_CFLAGS:+${__INTEL_POST_CFLAGS:-} }${2:-} ${INTEL_OPTIMIZER_FLAGS:-}"
+	export __INTEL_POST_CFLAGS="-Wp,-DEIGEN_USE_MKL -Wp,-DEIGEN_USE_MKL_ALL ${__INTEL_POST_CFLAGS:+${__INTEL_POST_CFLAGS:-} }${2:-} ${INTEL_OPTIMIZER_FLAGS:-}"
 
 	# Set ncpus
 	NCPU="${NCPU:-0}"
