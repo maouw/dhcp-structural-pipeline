@@ -436,10 +436,16 @@ FROM build-pipeline-applications AS build-pipeline
 ARG MAMBA_DOCKERFILE_ACTIVATE=1
 WORKDIR "${DHCP_DIR}"
 COPY --chmod=a+rX src/dhcp-pipeline "${DHCP_DIR}"
-COPY src/config/ldconfig-intel.conf /etc/ld.so.conf.d/0-intel.conf
-SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
+SHELL ["/bin/bash", "-eEx", "-c"]
 RUN <<-EOF
-    
+
     ln -sv "${DRAWEMDIR}/atlases" ${DHCP_DIR}/atlases
+    echo "${DHCP_PREFIX}/lib/mirtk" >> /etc/ld.so.conf.d/0-dhcp-pipeline.conf
+    (source "/opt/build/compilervars.sh"; find "${DHCP_PREFIX}" -type f -executable 2>/dev/null | xargs ldd 2>/dev/null | grep "=>[[:space:]]*${ONEAPI_ROOT}" | grep -o -E '/\S*' | sort | uniq | xargs -I {} cp -v {} "${DHCP_PREFIX}/lib/")
     ldconfig
 EOF
+
+FROM base AS final
+ARG MAMBA_DOCKERFILE_ACTIVATE=1
+WORKDIR /
+COPY --from=build-pipeline "${DHCP_PREFIX}" "${DHCP_PREFIX}"

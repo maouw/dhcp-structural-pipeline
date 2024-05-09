@@ -2,7 +2,7 @@
 
 # if FSLDIR is not defined, assume we need to read the FSL startup
 
-if [ -n "${FSLDIR:-}" ] && [ -d "${FSLDIR:-}" ] && [ -r "${FSLDIR}/fslconf/fsl.sh" ]; then
+if [ -n "${FSLDIR:-}" ] && [ -d "${FSLDIR:-}" ] && [ -r "${FSLDIR}/etc/fslconf/fsl.sh" ]; then
 	source "${FSLDIR}/etc/fslconf/fsl.sh"
 else
 	echo "FSLDIR=\"${FSLDIR:-}\" is not a valid setting for FSL startup" >&2
