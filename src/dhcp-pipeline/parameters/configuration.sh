@@ -40,22 +40,25 @@ export registration_config_template=$parameters_dir/ireg.cfg
 # surface reconstuction parameters
 export surface_recon_config=$parameters_dir/recon-neonatal-cortex.cfg
 
+
 # log function
+
 run() {
-	echo "$@"
-	"$@"
-	if [ ! $? -eq 0 ]; then
-		echo "ERROR: \"$*\": failed" >&2
-		exit 1
-	fi
 	saved_opts="$-"
 	set +x
+
 	_run_log_ctx='%s <%s:%s> RUN %s' "$(date -Is)" "${BASH_SOURCE[0]:-???}" "${LINENO:-???}" "$*"
 
-	export DEBUG_CENTRAL_LOG_LOCATION="/data/debug.log"
+	if command -v /usr/bin/time 2>/dev/null; then
+		_run_cmd=(/usr/bin/time -f '"%C" elapsed=%E user=%U system=%S cpu=%P maxrss=%M I=%If O=%Ofsout c=%c w=%w W=%W')
+	else
+		export TIMEFORMAT="\"$*\" elapsed=%RR user=%UU system=%SS cpu=%P%%"
+		_run_cmd=(time)
+	fi
 
-	printf '%s <%s:%s> RUN %s' "$(date -Is)" "${BASH_SOURCE[0]:-???}" "${LINENO:-???}" "$*" | tee --output-error=warn -a "${DEBUG_CENTRAL_LOG_LOCATION}"
-	"$@" || { printf '%s <%s:%s> ERROR: RUN \"%s\" failed' "$(date -Is)" "${BASH_SOURCE[0]:-???}" "${LINENO:-???}" "$*" | tee --output-error=warn -a "${DEBUG_CENTRAL_LOG_LOCATION}"; exit 1; }
+	printf '%s <%s:%s> RUN %s' "$(date -Is)" "${BASH_SOURCE[0]:-???}" "${LINENO:-???}" "$*" | tee --output-error=warn -a "${DEBUG_CENTRAL_LOG_LOCATION:-debug.log}"
+	"${_run_cmd[@]}" "$@" || { printf '%s <%s:%s> ERROR: RUN \"%s\" failed' "$(date -Is)" "${BASH_SOURCE[0]:-???}" "${LINENO:-???}" "$*" | tee --output-error=warn -a "${DEBUG_CENTRAL_LOG_LOCATION:-debug.log}"; exit 1; }
+
 	case "${saved_opts:-}" in
 	*x*) set -x ;;
 	*) ;;
