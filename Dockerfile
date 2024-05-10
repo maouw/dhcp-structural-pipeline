@@ -377,63 +377,60 @@ ADD --link --keep-git-dir=true https://github.com/BioMedIA/MIRTK.git#973ce2fe3f9
 COPY --link src/ext/antsCommandLineOption.h antsCommandLineOption.h
 RUN <<-EOF
 
-    cd src
-    git submodule foreach git fetch --all --tags
-    ( cd Packages/Deformable && git checkout 9070e8e60e8721ed9675cdd6390de4e2f25ae2f3 )
-    ( cd Packages/DrawEM; git checkout d2ff4e307638727d66aff3ece25496677bbd8df1; )
     
-    git checkout be86b02d47a7ce74b17224891e25899c30f37d74 -- CMake/Modules/FindTBB.cmake Modules/Common/include/mirtk/Parallel.h Modules/Common/include/mirtk/Parallel.h Modules/Common/src/Parallel.cc
-    cd Packages/DrawEM
-    git fetch --tags origin
-    git checkout v1.2.1
-    mv /opt/build/mirtk/antsCommandLineOption.h ThirdParty/ANTs/
+    (cd src; git submodule foreach git fetch --all --tags)
+    ( cd src/Packages/Deformable && git checkout 9070e8e60e8721ed9675cdd6390de4e2f25ae2f3 )
+    ( cd src/Packages/DrawEM; git checkout d2ff4e307638727d66aff3ece25496677bbd8df1; mv /opt/build/mirtk/antsCommandLineOption.h ThirdParty/ANTs/ )
+    ( cp src/CMake/Modules/FindTBB.cmake "${DHCP_PREFIX}/lib/cmake/vtk-9.2/FindTBB.cmake"; )
+    #git checkout be86b02d47a7ce74b17224891e25899c30f37d74 -- CMake/Modules/FindTBB.cmake Modules/Common/include/mirtk/Parallel.h Modules/Common/include/mirtk/Parallel.h Modules/Common/src/Parallel.cc
     # sed -Ei 's/(^.*\bMIRTK_Common_EXPORT\b.*\btbb_scheduler.*$)/\/\/ \1/g' Modules/Common/include/mirtk/Parallel.h
     # sed -Ei 's/(^.*tbb::task_scheduler_init.*$)/\/\/ \1/g' Modules/Common/include/mirtk/Parallel.h
     # sed -Ei 's/(^.*tbb[/]task_scheduler_init.h.*$)/\/\/ \1/g' Modules/Common/include/mirtk/Parallel.h
-    
-    cd /opt/build/mirtk
-
-    mkdir -p build && cd build
     source "/opt/build/compilervars.sh"
-    set_compiler_flags "" "-std=c++17 ${INTEL_MKL_TBB_STATIC_FLAGS}"
+    fix_cmake_intel_openmp
+    mkdir -p build && cd build
+    export INTEL_OPTIMIZER_IPO="-ipo-separate"
+    set_compiler_flags "" "${INTEL_MKL_TBB_STATIC_FLAGS} -static-intel"
+    export TBB_ROOT="${TBBROOT}"
+    export CMAKE_PREFIX_PATH="${TBBROOT}:${CMAKE_PREFIX_PATH:-}"
     cmake -Wno-dev -GNinja \
-            -D CMAKE_CXX_STANDARD=17 \
-            -D CMAKE_CXX_EXTENSIONS:BOOL=OFF \
-            -D BUILD_CHANGELOG:BOOL=OFF \
             -D BUILD_DOCUMENTATION:BOOL=OFF \
             -D BUILD_EXAMPLES:BOOL=OFF \
             -D BUILD_CHANGELOG:BOOL=OFF \
             -D BUILD_SHARED_LIBS:BOOL=ON \
             -D BUILD_TESTING:BOOL=OFF \
-            -D EIGEN_USE_MKL:BOOL=ON \
-            -D EIGEN_USE_MKL_ALL:BOOL=ON \
             -D USE_SYSTEM_EIGEN:BOOL=ON \
             -D WITH_EIGEN3:BOOL=ON \
             -D WITH_FLANN:BOOL=ON \
-            -D WITH_ITK:BOOL=ON \
             -D WITH_MATLAB:BOOL=OFF \
             -D WITH_TBB:BOOL=ON \
             -D WITH_VTK:BOOL=ON \
+            -D WITH_ITK:BOOL=ON \
+            -D DEPENDS_TBB_DIR="${TBBROOT}" \
             -D DEPENDS_ITK_DIR="${DHCP_PREFIX}" \
-            -D DEPENDS_VTK_DIR="${DHCP_PREFIX}" \
-            -D DEPENDS_Eigen3_DIR="${DHCP_PREFIX}/include/eigen3" \
+            -D DEPENDS_VTK_DIR="/opt/dhcp/lib/cmake/vtk-9.2" \
             -D ITK_DIR="${DHCP_PREFIX}" \
             -D VTK_DIR="${DHCP_PREFIX}" \
+            -D TBB_DIR="${TBBROOT}" \
+            -D DEPENDS_Eigen3_DIR="${DHCP_PREFIX}/include/eigen3" \
             -D MODULE_Deformable:BOOL=ON \
             -D MODULE_DrawEM:BOOL=ON \
         ../src || { tail -v -n +0 CMakeFiles/*.log || true; exit 1; }
     cmake --build .
     cmake --install .
+EOF
 
-    cd /opt/build/mirtk/src/Packages/DrawEM
-    mkdir -p "${DRAWEMDIR}" && cp -Rv /opt/build/mirtk/src/Packages/DrawEM/atlases "${DRAWEMDIR}"
-    cp -Rv src/Packages/DrawEM/label_names "${DRAWEMDIR}"
-    cp -Rv src/Packages/DrawEM/parameters "${DRAWEMDIR}"
-    cp -Rv src/Packages/DrawEM/scripts "${DRAWEMDIR}"
+WORKDIR /opt/build/mirtk/src/Packages/DrawEM
+SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
+RUN <<-EOF
+    
+    mkdir -p "${DRAWEMDIR}" && cp -Rv atlases "${DRAWEMDIR}"
+    cp -R label_names "${DRAWEMDIR}"
+    cp -R parameters "${DRAWEMDIR}"
+    cp -R scripts "${DRAWEMDIR}"
     git config --worktree --unset-all core.worktree
     cp -R /opt/build/mirtk/src/.git/modules/Packages/DrawEM "${DRAWEMDIR}/.git"
 
-    
 EOF
 
 
