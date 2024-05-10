@@ -43,8 +43,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,t
     apt-get update -qq
     apt-get install -yq --no-install-recommends \
         bc \
+        dc \
         ca-certificates \
         curl \
+        fd-find \
         git \
         git-lfs \
         gpg \
@@ -56,7 +58,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,t
         nano \
         net-tools \
         openssh-client \
+        ripgrep \
         tar \
+        tree \
         time \
         unzip \
         wget
@@ -74,11 +78,11 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,t
         libboost-dev \
         libboost-math-dev \
         libboost-random-dev \
+        libcifti-dev \
         libcilkrts5 \
         libcoarrays-openmpi-dev \
         libdcmtk-dev \
         libdouble-conversion-dev \
-        libeigen3-dev  \
         libexpat-dev \
         libfftw3-dev \
         libflann-dev \
@@ -122,7 +126,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,t
 
     # Set up micromamba and install FSL:
     export CI=1
-    micromamba create --yes --verbose --prefix "${ENV_NAME}" --channel https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public --channel conda-forge fsl-avwutils
+    micromamba create --yes --verbose --prefix "${ENV_NAME}" --channel https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public --channel conda-forge fsl-avwutils fsl-flirt fsl-bet2
     micromamba clean --yes --all
     micromamba env list >&2
 EOF
@@ -139,7 +143,14 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,t
     apt-get install -yq \
         build-essential \
         cmake \
-        intel-hpckit-2023.2.0 \
+        intel-oneapi-ccl-devel-2021.10.0 \
+        intel-oneapi-common-licensing-2023.2.0 \
+        intel-oneapi-common-vars \
+        intel-oneapi-ipp-devel-2021.9.0 \
+        intel-oneapi-ippcp-devel-2021.8.0 \
+        intel-oneapi-mkl-devel-2023.2.0 \
+        intel-oneapi-tbb-devel-2021.10.0 \
+        intel-oneapi-compiler-dpcpp-cpp-and-cpp-classic-2023.2.0 \
         libarchive13 \
         libtool \
         ninja-build
@@ -149,67 +160,135 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,t
         [ -n "${cmake_dir:-}" ] || { echo "ERROR: cmake directory not found in /usr/share" >&2; exit 1; }
         ln -sv "${cmake_dir}" /opt/build/cmake-dir
 EOF
-COPY --chmod=644 src/config/compilervars.sh "/opt/build/compilervars.sh"
+
+# Install CUDA tools:
+ARG MAMBA_DOCKERFILE_ACTIVATE=1
+WORKDIR "/opt/build"
+SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,target=/var/lib/apt,sharing=locked --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
+    <<-EOF
+
+    export DEBIAN_FRONTEND=noninteractive
+
+    if ! apt-cache show cuda-toolkit-12-4 >/dev/null 2>&1; then
+        wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-keyring_1.1-1_all.deb
+        dpkg -i cuda-keyring_1.1-1_all.deb
+        apt-get update -o Dir::Etc::sourcelist="/etc/apt/sources.list.d/cuda-ubuntu2004-x86_64.list" -o Dir::Etc::sourceparts="-" -o APT::Get::List-Cleanup="0"
+    fi
+    apt-get -yq install cuda-toolkit-12-4
+EOF
+
+WORKDIR "/opt/build"
+SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
+COPY src/config/compilervars.sh "/opt/build/compilervars.sh"
+RUN <<-EOF
+
+    source "/opt/build/compilervars.sh"
+
+    ## update alternatives
+    update-alternatives --install /usr/lib/x86_64-linux-gnu/libblas.so    libblas.so-x86_64-linux-gnu      "${MKLROOT}/lib/intel64/libmkl_rt.so" 50
+    update-alternatives --install /usr/lib/x86_64-linux-gnu/libblas.so.3  libblas.so.3-x86_64-linux-gnu    "${MKLROOT}/lib/intel64/libmkl_rt.so" 50
+    update-alternatives --install /usr/lib/x86_64-linux-gnu/liblapack.so liblapack.so-x86_64-linux-gnu    "${MKLROOT}/lib/intel64/libmkl_rt.so" 50
+    update-alternatives --install /usr/lib/x86_64-linux-gnu/liblapack.so.3 liblapack.so.3-x86_64-linux-gnu  "${MKLROOT}/lib/intel64/libmkl_rt.so" 50
+    
+    # Update dynamic linker
+    echo "${ONEAPI_ROOT}/compiler/latest/linux/compiler/lib/intel64_lin" >> /etc/ld.so.conf.d/1-intel.conf
+    echo "${ONEAPI_ROOT}/compiler/latest/linux/lib" >> /etc/ld.so.conf.d/1-intel.conf
+    echo "${ONEAPI_ROOT}/compiler/latest/linux/lib/x64" >> /etc/ld.so.conf.d/1-intel.conf
+    echo "${MKLROOT}/lib/intel64" >> /etc/ld.so.conf.d/1-intel.conf
+    echo "${TBBROOT}/lib/intel64/gcc4.8" >> /etc/ld.so.conf.d/1-intel.conf
+
+    ln -s /usr/local/cuda-12.4 /usr/local/cuda
+    ldconfig
+    cd /opt/build/cmake-dir
+    fix_cmake_intel_openmp
+EOF
+
+# Install Eigen 3.4:
+WORKDIR /opt/build/eigen/src
+ADD --link https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz src.tar.gz
+SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
+RUN <<-EOF
+
+    source "/opt/build/compilervars.sh"
+
+    tar -xzf src.tar.gz --strip-components=1
+    fix_cmake_intel_openmp
+    cd ../
+
+    mkdir -p build && cd build
+
+    cmake -Wno-dev \
+            -D BUILD_TESTING:BOOL=OFF \
+            -D BUILD_DOCUMENTATION:BOOL=OFF \
+            -D BLA_VENDOR=Intel10_64lp \
+            -D EIGEN_CUDA_COMPUTE_ARCH="${CUDAARCHS:-}" \
+        ../src || { tail -v -n +0 CMakeFiles/*.log || true; exit 1; }
+    cmake --build .
+    cmake --install .
+EOF
 
 # Start build:
 FROM builder AS build-vtk
 ARG MAMBA_DOCKERFILE_ACTIVATE=1
 WORKDIR /opt/build/vtk
-ADD --link --keep-git-dir=true https://github.com/Kitware/VTK.git#v8.2.0 src
+ADD --link --keep-git-dir=true https://github.com/Kitware/VTK.git#v9.2.6 src
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 RUN <<-EOF
 
-    mkdir -p build && cd build
     source "/opt/build/compilervars.sh"
-    set_compiler_flags "-wd1890" "-std=c++11 ${INTEL_MKL_OPENMP_STATIC_FLAGS}"
+    fix_cmake_intel_openmp
+    mkdir -p build && cd build
+    export INTEL_OPTIMIZER_IPO="-ipo-separate"
+    set_compiler_flags "-wd1890" "${INTEL_MKL_TBB_STATIC_FLAGS} -static-intel -qoverride-limits"
     cmake -Wno-dev -GNinja \
-            -D CMAKE_CXX_STANDARD=11 \
-            -D CMAKE_CXX_EXTENSIONS:BOOL=OFF \
-            -D BUILD_DOCUMENTATION:BOOL=OFF \
             -D BUILD_SHARED_LIBS:BOOL=ON \
             -D BUILD_TESTING:BOOL=OFF \
-            -D VTK_USE_SYSTEM_EIGEN:BOOL=ON \
-            -D VTK_USE_SYSTEM_EXPAT:BOOL=ON \
-            -D VTK_USE_SYSTEM_HDF5:BOOL=ON \
-            -D VTK_USE_SYSTEM_JPEG:BOOL=ON \
-            -D VTK_USE_SYSTEM_JSONCPP:BOOL=ON \
-            -D VTK_USE_SYSTEM_LZ4:BOOL=ON \
-            -D VTK_USE_SYSTEM_NETCDF:BOOL=ON \
-            -D VTK_USE_SYSTEM_PNG:BOOL=ON \
-            -D VTK_USE_SYSTEM_TIFF:BOOL=ON \
-            -D VTK_RENDERING_BACKEND="None" \
-            -D VTK_SMP_IMPLEMENTATION_TYPE=OPENMP \
+            -D VTK_GROUP_ENABLE_Qt:STRING=DONT_WANT \
+            -D VTK_GROUP_ENABLE_Rendering:STRING=DONT_WANT \
+            -D VTK_GROUP_ENABLE_StandAlone:STRING=DONT_WANT \
+            -D VTK_GROUP_ENABLE_Views:STRING=DONT_WANT \
+            -D VTK_GROUP_ENABLE_Web:STRING=DONT_WANT \
+            -D VTK_MODULE_ENABLE_VTK_AcceleratorsVTKmCore:STRING=WANT \
+            -D VTK_MODULE_ENABLE_VTK_AcceleratorsVTKmDataModel:STRING=WANT \
+            -D VTK_MODULE_ENABLE_VTK_AcceleratorsVTKmFilters:STRING=WANT \
+            -D VTK_MODULE_ENABLE_VTK_CommonCore:STRING=WANT \
+            -D VTK_MODULE_ENABLE_VTK_CommonDataModel:STRING=WANT \
+            -D VTK_MODULE_ENABLE_VTK_CommonExecutionModel:STRING=WANT \
+            -D VTK_MODULE_ENABLE_VTK_FiltersCore:STRING=WANT \
+            -D VTK_MODULE_ENABLE_VTK_FiltersGeneral:STRING=WANT \
+            -D VTK_MODULE_ENABLE_VTK_FiltersFlowPaths:STRING=WANT \
+            -D VTK_MODULE_ENABLE_VTK_FiltersGeometry:STRING=WANT \
+            -D VTK_MODULE_ENABLE_VTK_FiltersHybrid:STRING=WANT \
+            -D VTK_MODULE_ENABLE_VTK_FiltersModeling:STRING=WANT \
+            -D VTK_MODULE_ENABLE_VTK_FiltersParallel:STRING=WANT \
+            -D VTK_MODULE_ENABLE_VTK_FiltersSMP:STRING=WANT \
+            -D VTK_MODULE_ENABLE_VTK_ImagingCore:STRING=WANT \
+            -D VTK_MODULE_ENABLE_VTK_ImagingStencil:STRING=WANT \
+            -D VTK_MODULE_ENABLE_VTK_IOGeometry:STRING=WANT \
+            -D VTK_MODULE_ENABLE_VTK_IOImage:STRING=WANT \
+            -D VTK_MODULE_ENABLE_VTK_IOLegacy:STRING=WANT \
+            -D VTK_MODULE_ENABLE_VTK_IOParallel:STRING=WANT \
+            -D VTK_MODULE_ENABLE_VTK_IOPLY:STRING=WANT \
+            -D VTK_MODULE_ENABLE_VTK_IOXML:STRING=WANT \
+            -D VTK_MODULE_ENABLE_VTK_ParallelCore:STRING=WANT \
+            -D VTK_ENABLE_WRAPPING=OFF \
+            -D VTK_USE_X=OFF \
+            -D VTK_ENABLE_REMOTE_MODULES:BOOL=OFF \
+            -D VTK_SMP_IMPLEMENTATION_TYPE=TBB \
+            -D VTK_MODULE_USE_EXTERNAL_VTK_eigen:BOOL=ON \
+            -D VTK_MODULE_USE_EXTERNAL_VTK_expat:BOOL=ON \
+            -D VTK_MODULE_USE_EXTERNAL_VTK_jpeg:BOOL=ON \
+            -D VTK_MODULE_USE_EXTERNAL_VTK_libxml2:BOOL=ON \
+            -D VTK_MODULE_USE_EXTERNAL_VTK_lz4:BOOL=ON \
+            -D VTK_MODULE_USE_EXTERNAL_VTK_png:BOOL=ON \
+            -D VTK_MODULE_USE_EXTERNAL_VTK_tiff:BOOL=ON \
+            -D VTK_MODULE_USE_EXTERNAL_VTK_zlib:BOOL=ON \
             -D VTK_WRAP_PYTHON:BOOL=OFF \
-            -D VTKm_ENABLE_CUDA:BOOL=OFF \
-            -D VTKm_ENABLE_OPENMP:BOOL=ON \
             -D VTKm_ENABLE_RENDERING:BOOL=OFF \
-            -D VTK_Group_Qt:BOOL=OFF \
-            -D VTK_Group_Rendering:BOOL=OFF \
-            -D VTK_Group_StandAlone:BOOL=OFF \
-            -D VTK_Group_Web:BOOL=OFF \
-            -D Module_vtkAcceleratorsVTKm:BOOL=ON \
-            -D Module_vtkCommonCore:BOOL=ON \
-            -D Module_vtkCommonDataModel:BOOL=ON \
-            -D Module_vtkCommonExecutionModel:BOOL=ON \
-            -D Module_vtkFiltersCore:BOOL=ON \
-            -D Module_vtkFiltersFlowPaths:BOOL=ON \
-            -D Module_vtkFiltersGeneral:BOOL=ON \
-            -D Module_vtkFiltersGeometry:BOOL=ON \
-            -D Module_vtkFiltersHybrid:BOOL=ON \
-            -D Module_vtkFiltersModeling:BOOL=ON \
-            -D Module_vtkFiltersParallel:BOOL=ON \
-            -D Module_vtkFiltersSources:BOOL=ON \
-            -D Module_vtkImagingCore:BOOL=ON \
-            -D Module_vtkImagingStencil:BOOL=ON \
-            -D Module_vtkIOGeometry:BOOL=ON \
-            -D Module_vtkIOImage:BOOL=ON \
-            -D Module_vtkIOLegacy:BOOL=ON \
-            -D Module_vtkIOParallel:BOOL=ON \
-            -D Module_vtkIOPLY:BOOL=ON \
-            -D Module_vtkIOXML:BOOL=ON \
-            -D Module_vtkParallelCore:BOOL=ON \
+            -D VTK_SMP_ENABLE_TBB:BOOL=ON \
             ../src || { tail -v -n +0 CMakeFiles/*.log || true; exit 1; }
-    cmake --build .
+    cmake --build . -- -k 1
     cmake --install .
 EOF
 
@@ -220,24 +299,28 @@ ADD --keep-git-dir=true https://github.com/InsightSoftwareConsortium/ITK.git#v5.
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 RUN <<-EOF
 
-    mkdir -p build && cd build
+    
     source "/opt/build/compilervars.sh"
-    set_compiler_flags "" "-std=c++17 ${INTEL_MKL_TBB_STATIC_FLAGS}"
+    fix_cmake_intel_openmp
+    mkdir -p build && cd build
+
+    cp -v --no-clobber /opt/build/eigen/src/cmake/FindEigen3.cmake /opt/build/cmake-dir/Modules/
+
+    export INTEL_OPTIMIZER_IPO="-ipo-separate"
+    set_compiler_flags "" "-w2 -wd869 -wd593 -wd1286" "${INTEL_MKL_TBB_STATIC_FLAGS} -static-intel -qoverride-limits"
     cmake -Wno-dev -GNinja \
-            -D CMAKE_CXX_STANDARD=17 \
-            -D CMAKE_CXX_EXTENSIONS:BOOL=OFF \
             -D BUILD_DOCUMENTATION:BOOL=OFF \
             -D BUILD_EXAMPLES:BOOL=OFF \
             -D BUILD_SHARED_LIBS:BOOL=ON \
             -D BUILD_TESTING:BOOL=OFF \
-            -D EIGEN_USE_MKL:BOOL=ON \
-            -D EIGEN_USE_MKL_ALL:BOOL=ON \
             -D CMAKE_CXX_VISIBILITY_PRESET="default" \
+            -D ITK_USE_KWSTYLE=OFF \
             -D ITK_BUILD_DEFAULT_MODULES:BOOL=OFF \
             -D ITK_C_WARNING_FLAGS="-Wno-uninitialized -Wno-unused-parameter -wd1268 -wd981 -wd383 -wd1418 -wd1419 -wd2259 -wd1572 -wd424 -Wno-long-double -Wcast-align -Wdisabled-optimization -Wextra -Wformat=2 -Winvalid-pch -Wno-format-nonliteral -Wpointer-arith -Wshadow -Wunused -Wwrite-strings -Wno-strict-overflow" \
             -D ITK_CXX_WARNING_FLAGS="-wd1268 -wd981 -wd383 -wd1418 -wd1419 -wd2259 -wd1572 -wd424  -Wno-long-double -Wcast-align -Wdisabled-optimization -Wextra -Wformat=2 -Winvalid-pch -Wno-format-nonliteral -Wpointer-arith -Wshadow -Wunused -Wwrite-strings -Wno-strict-overflow -Wno-deprecated -Wno-invalid-offsetof -Wno-undefined-var-template -Woverloaded-virtual -Wctad-maybe-unsupported -Wstrict-null-sentinel" \
             -D ITK_TEMPLATE_VISIBILITY_DEFAULT:BOOL=ON \
             -D ITK_USE_MKL:BOOL=ON \
+            -D ITK_USE_GPU:BOOL=ON \
             -D ITK_USE_SYSTEM_DCMTK:BOOL=ON \
             -D ITK_USE_SYSTEM_EIGEN:BOOL=ON \
             -D ITK_USE_SYSTEM_EXPAT:BOOL=ON \
@@ -249,7 +332,8 @@ RUN <<-EOF
             -D ITK_USE_SYSTEM_TIFF:BOOL=ON \
             -D ITK_USE_SYSTEM_ZLIB:BOOL=ON \
             -D ITK_USE_TBB:BOOL=ON \
-            -D ITKGroup_Core:BOOL=OFF \
+            -D ITK_USE_TBB_WITH_MKL:BOOL=ON \
+            -D ITKGroup_Core:BOOL=ON \
             -D Module_ITKBiasCorrection:BOOL=ON \
             -D Module_ITKCommon:BOOL=ON \
             -D Module_ITKImageGrid:BOOL=ON \
@@ -265,6 +349,7 @@ RUN <<-EOF
             -D Module_ITKIOMeshOBJ:BOOL=ON \
             -D Module_ITKIOMeshOFF:BOOL=ON \
             -D Module_ITKIOMeshVTK:BOOL=ON \
+            -D Module_ITKIOMeta:BOOL=ON \
             -D Module_ITKIOMINC:BOOL=ON \
             -D Module_ITKIONIFTI:BOOL=ON \
             -D Module_ITKIOPNG:BOOL=ON \
@@ -276,7 +361,6 @@ RUN <<-EOF
             -D Module_ITKIOTransformInsightLegacy:BOOL=ON \
             -D Module_ITKIOVTK:BOOL=ON \
             -D Module_ITKIOXML:BOOL=ON \
-            -D Module_ITKTBB:BOOL=ON \
             -D Module_ITKTestKernel:BOOL=OFF \
             -D Module_ITKThresholding:BOOL=ON \
             -D Module_ITKTransform:BOOL=ON \
@@ -289,12 +373,15 @@ FROM build-itk AS build-mirtk
 ARG MAMBA_DOCKERFILE_ACTIVATE=1
 WORKDIR /opt/build/mirtk
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
-ADD --link --keep-git-dir=true https://github.com/BioMedIA/MIRTK.git#d0722b291597f2c4b1fbb9f929711af59573de58 src
+ADD --link --keep-git-dir=true https://github.com/BioMedIA/MIRTK.git#973ce2fe3f9508dec68892dbf97cca39067aa3d6 src
 COPY --link src/ext/antsCommandLineOption.h antsCommandLineOption.h
 RUN <<-EOF
 
     cd src
-    git fetch origin --no-recurse-submodules
+    git submodule foreach git fetch --all --tags
+    ( cd Packages/Deformable && git checkout 9070e8e60e8721ed9675cdd6390de4e2f25ae2f3 )
+    ( cd Packages/DrawEM; git checkout d2ff4e307638727d66aff3ece25496677bbd8df1; )
+    
     git checkout be86b02d47a7ce74b17224891e25899c30f37d74 -- CMake/Modules/FindTBB.cmake Modules/Common/include/mirtk/Parallel.h Modules/Common/include/mirtk/Parallel.h Modules/Common/src/Parallel.cc
     cd Packages/DrawEM
     git fetch --tags origin
@@ -329,6 +416,7 @@ RUN <<-EOF
             -D WITH_VTK:BOOL=ON \
             -D DEPENDS_ITK_DIR="${DHCP_PREFIX}" \
             -D DEPENDS_VTK_DIR="${DHCP_PREFIX}" \
+            -D DEPENDS_Eigen3_DIR="${DHCP_PREFIX}/include/eigen3" \
             -D ITK_DIR="${DHCP_PREFIX}" \
             -D VTK_DIR="${DHCP_PREFIX}" \
             -D MODULE_Deformable:BOOL=ON \
@@ -337,12 +425,15 @@ RUN <<-EOF
     cmake --build .
     cmake --install .
 
-    cd /opt/build/mirtk
+    cd /opt/build/mirtk/src/Packages/DrawEM
     mkdir -p "${DRAWEMDIR}" && cp -Rv /opt/build/mirtk/src/Packages/DrawEM/atlases "${DRAWEMDIR}"
-
     cp -Rv src/Packages/DrawEM/label_names "${DRAWEMDIR}"
     cp -Rv src/Packages/DrawEM/parameters "${DRAWEMDIR}"
     cp -Rv src/Packages/DrawEM/scripts "${DRAWEMDIR}"
+    git config --worktree --unset-all core.worktree
+    cp -R /opt/build/mirtk/src/.git/modules/Packages/DrawEM "${DRAWEMDIR}/.git"
+
+    
 EOF
 
 
@@ -460,6 +551,7 @@ EOF
 
 FROM base AS final
 ARG MAMBA_DOCKERFILE_ACTIVATE=1
+ENV ITK_GLOBAL_DEFAULT_THREADER=tbb
 WORKDIR /
 COPY --from=build-pipeline "${DHCP_PREFIX}" "${DHCP_PREFIX}"
 COPY --chmod=755 --from=build-pipeline /opt/build/mirtk/build/lib/mirtk/tools/N4  "${DHCP_PREFIX}/lib/mirtk/tools/N4"
