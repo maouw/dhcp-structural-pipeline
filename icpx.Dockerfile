@@ -190,7 +190,7 @@ RUN <<-EOF
     update-alternatives --install /usr/lib/x86_64-linux-gnu/libblas.so.3  libblas.so.3-x86_64-linux-gnu    "${MKLROOT}/lib/intel64/libmkl_rt.so" 50
     update-alternatives --install /usr/lib/x86_64-linux-gnu/liblapack.so liblapack.so-x86_64-linux-gnu    "${MKLROOT}/lib/intel64/libmkl_rt.so" 50
     update-alternatives --install /usr/lib/x86_64-linux-gnu/liblapack.so.3 liblapack.so.3-x86_64-linux-gnu  "${MKLROOT}/lib/intel64/libmkl_rt.so" 50
-    
+
     # Update dynamic linker
     echo "${ONEAPI_ROOT}/compiler/latest/linux/compiler/lib/intel64_lin" >> /etc/ld.so.conf.d/1-intel.conf
     echo "${ONEAPI_ROOT}/compiler/latest/linux/lib" >> /etc/ld.so.conf.d/1-intel.conf
@@ -232,20 +232,34 @@ EOF
 FROM builder AS build-vtk
 ARG MAMBA_DOCKERFILE_ACTIVATE=1
 WORKDIR /opt/build/vtk
-ADD --link --keep-git-dir=true https://github.com/Kitware/VTK.git#v9.2.6 src
+ADD --link --keep-git-dir=true https://github.com/Kitware/VTK.git src
 ARG BUILD_VTK_CUDA=OFF
-SHELL ["/bin/bash", "-eE", "-o", "pipefail", "-c"]
+SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 RUN <<-EOF
 
     patch src/ThirdParty/vtkm/vtkvtkm/vtk-m/vtkm/exec/cuda/internal/ExecutionPolicy.h <(printf '18a19\n> #include <thrust/sort.h>\n')
-
-    export INTEL_OPTIMIZER_IPO=""
-    source "/opt/build/compilervars.sh"
+    BUILD_VTK_CUDA="${BUILD_VTK_CUDA:-}"
+    if [ "${BUILD_VTK_CUDA:-OFF}" = "ON" ]; then
+        CXXSTD="-DCMAKE_CXX_STANDARD=17"
+        export INTEL_OPTIMIZER_IPO=""
+        export __INTEL_POST_CFLAGS=""
+        source "/opt/build/compilervars.sh"
+        export CXX="icpx"
+        export CC="icx"
+        export CUDAHOSTCXX="$(which clang++)"
+        #export CUDAFLAGS="--forward-unknown-to-host-compiler --allow-unsupported-compiler --std c++${CMAKE_CXX_STANDARD}"
+        export NVCC_APPEND_FLAGS="--forward-unknown-to-host-compiler --allow-unsupported-compiler --std c++17 -static-intel"
+        set_compiler_flags "${EIGEN_MKL_ALL_FLAGS}" ""
+    else 
+        export INTEL_OPTIMIZER_IPO=""
+        source "/opt/build/compilervars.sh"
+        set_compiler_flags "" "-w2 -wd869 -wd593 -wd1286" "${INTEL_MKL_TBB_STATIC_FLAGS} -static-intel -qoverride-limits"
+    fi
     fix_cmake_intel_openmp
+
     mkdir -p build && cd build
-    export NVCC_APPEND_FLAGS="--forward-unknown-to-host-compiler --allow-unsupported-compiler"
-    set_compiler_flags "-wd1890 -inline-factor=200 ${EIGEN_MKL_ALL_FLAGS}" "${INTEL_MKL_TBB_STATIC_FLAGS} -static-intel"
-    cmake -Wno-dev -GNinja \
+
+    cmake --debug-output -Wno-dev -GNinja ${CXXSTD:-} \
             -D BUILD_SHARED_LIBS:BOOL=ON \
             -D BUILD_TESTING:BOOL=OFF \
             -D VTK_ENABLE_REMOTE_MODULES:BOOL=OFF \
@@ -295,14 +309,14 @@ RUN <<-EOF
             -D VTK_MODULE_USE_EXTERNAL_VTK_zlib:BOOL=ON \
             -D VTK_SMP_ENABLE_TBB:BOOL=ON \
             -D VTK_SMP_IMPLEMENTATION_TYPE=TBB \
-            -D VTK_USE_CUDA:BOOL=${BUILD_VTK_CUDA:-OFF}  \
+            -D VTK_USE_CUDA:BOOL=${BUILD_VTK_CUDA:-OFF} \
             -D VTK_USE_X:BOOL=OFF \
             -D VTK_WRAP_PYTHON:BOOL=OFF \
-            -D VTKm_ENABLE_CUDA:BOOL=${BUILD_VTK_CUDA:-OFF}  \
+            -D VTKm_ENABLE_CUDA:BOOL=${BUILD_VTK_CUDA:-OFF} \
             -D VTKm_ENABLE_RENDERING:BOOL=OFF \
             -D VTKm_ENABLE_TBB:BOOL=ON \
             ../src || { tail -v -n 50 CMakeFiles/*.log 2>/dev/null || true; exit 1; }
-    cmake --build . -- -k 1
+    cmake --build .
     cmake --install .
 EOF
 
@@ -322,7 +336,7 @@ RUN <<-EOF
 
     export INTEL_OPTIMIZER_IPO="-ipo-separate"
     set_compiler_flags "" "-w2 -wd869 -wd593 -wd1286" "${INTEL_MKL_TBB_STATIC_FLAGS} -static-intel -qoverride-limits"
-    cmake -Wno-dev -GNinja \
+    cmake --debug-output -Wno-dev -GNinja \
             -D BUILD_DOCUMENTATION:BOOL=OFF \
             -D BUILD_EXAMPLES:BOOL=OFF \
             -D BUILD_SHARED_LIBS:BOOL=ON \

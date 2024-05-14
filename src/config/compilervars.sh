@@ -2,6 +2,8 @@
 # Set up build target directory and add to cmake prefixes
 _oldflags="$-"; set +x
 
+export SETVARS_ARGS="--include-intel-llvm"
+
 . "${ONEAPI_ROOT:-/opt/intel/oneapi}/setvars.sh" >/dev/null
 export INTEL_OPTIMIZER_IPO="${INTEL_OPTIMIZER_IPO-"-ipo"}"
 export INTEL_OPTIMIZER_FP_MODEL="${INTEL_OPTIMIZER_FP_MODEL-"-fp-model=precise"}"
@@ -16,7 +18,7 @@ export EIGEN_MKL_ALL_FLAGS="-Wp,-DEIGEN_USE_MKL,-DEIGEN_USE_MKL_ALL"
 export EIGEN_CUDA_FLAGS="-Wp,-DEIGEN_USE_GPU"
 
 export __INTEL_PRE_CFLAGS="${__INTEL_PRE_CFLAGS-""}"
-export __INTEL_POST_CFLAGS="${__INTEL_POST_CFLAGS-"-w1 -diag-disable=10441 -diag-disable=15009 -diag-disable=10006 -diag-disable=10370 -diag-disable=10148 -diag-disable=10145 -wd10145 -no-cilk"}"
+export __INTEL_POST_CFLAGS="${__INTEL_POST_CFLAGS-"-diag-disable=10441 -diag-disable=15009 -diag-disable=10006 -diag-disable=10370 -diag-disable=10148 -diag-disable=10145 -wd10145 -no-cilk"}"
 
 export CPATH="${DHCP_PREFIX}/include:${CPATH}"
 export LIBRARY_PATH="${DHCP_PREFIX}/lib:${LIBRARY_PATH}"
