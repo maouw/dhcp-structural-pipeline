@@ -2,7 +2,7 @@
 ## Build Docker image for execution of dhcp pipelines within a Docker
 ## container with all modules and applications available in the image
 
-FROM mambaorg/micromamba:focal as base
+FROM mambaorg/micromamba:jammy as base
 
 USER root
 
@@ -44,6 +44,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,t
     apt-get install -yq --no-install-recommends \
         bc \
         dc \
+        dbus \
         ca-certificates \
         curl \
         fd-find \
@@ -69,7 +70,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,t
     echo "deb [signed-by=/usr/share/keyrings/intel-oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main " > /etc/apt/sources.list.d/oneAPI.list
 
     test -f /usr/share/doc/kitware-archive-keyring/copyright || wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null
-    echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ focal main' | tee /etc/apt/sources.list.d/kitware.list >/dev/null
+    echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ jammy main' | tee /etc/apt/sources.list.d/kitware.list >/dev/null
 
     apt-get update -qq
     apt-get install -yq --no-install-recommends \
@@ -79,7 +80,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,t
         libboost-math-dev \
         libboost-random-dev \
         libcifti-dev \
-        libcilkrts5 \
         libcoarrays-openmpi-dev \
         libdcmtk-dev \
         libdouble-conversion-dev \
@@ -141,7 +141,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,t
 
     export DEBIAN_FRONTEND=noninteractive
     apt-get install -yq \
-        build-essential \
+        gcc-12 \
+        g++-12 \
         cmake \
         intel-oneapi-ccl-devel-2021.10.0 \
         intel-oneapi-common-licensing-2023.2.0 \
@@ -153,12 +154,22 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,t
         intel-oneapi-compiler-dpcpp-cpp-and-cpp-classic-2023.2.0 \
         libarchive13 \
         libtool \
+        make \
         ninja-build
 
         cmake_dir="$(find /usr/share -maxdepth 1 -maxdepth 1 -follow -name 'cmake-*.*' | sort -V | head -n 1 || true)"
 
         [ -n "${cmake_dir:-}" ] || { echo "ERROR: cmake directory not found in /usr/share" >&2; exit 1; }
         ln -sv "${cmake_dir}" /opt/build/cmake-dir
+
+        # create a low-priority alternative for /usr/bin/gcc, /usr/bin/g++, and /usr/bin/gcov using gcc-11
+        update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 110 --slave /usr/bin/g++ g++ /usr/bin/g++-11 --slave /usr/bin/gcov gcov /usr/bin/gcov-11
+
+        # create a high-priority alternative for /usr/bin/gcc, /usr/bin/g++, and /usr/bin/gcov using gcc-12
+        update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 120 --slave /usr/bin/g++ g++ /usr/bin/g++-12 --slave /usr/bin/gcov gcov /usr/bin/gcov-12
+
+        # make sure you didn't goof anything up, should say version 12.1.0
+        gcc --version
 EOF
 
 # Install CUDA tools:
@@ -171,9 +182,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,t
     export DEBIAN_FRONTEND=noninteractive
 
     if ! apt-cache show cuda-toolkit-12-4 >/dev/null 2>&1; then
-        wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-keyring_1.1-1_all.deb
+        wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
         dpkg -i cuda-keyring_1.1-1_all.deb
-        apt-get update -o Dir::Etc::sourcelist="/etc/apt/sources.list.d/cuda-ubuntu2004-x86_64.list" -o Dir::Etc::sourceparts="-" -o APT::Get::List-Cleanup="0"
+        apt-get update -o Dir::Etc::sourcelist="/etc/apt/sources.list.d/cuda-ubuntu2204-x86_64.list" -o Dir::Etc::sourceparts="-" -o APT::Get::List-Cleanup="0"
     fi
     apt-get -yq install cuda-toolkit-12-4
 EOF
@@ -213,7 +224,6 @@ RUN <<-EOF
     source "/opt/build/compilervars.sh"
 
     tar -xzf src.tar.gz --strip-components=1
-    fix_cmake_intel_openmp
     cd ../
 
     mkdir -p build && cd build
@@ -230,22 +240,42 @@ EOF
 
 # Start build:
 FROM builder AS build-vtk
-ARG MAMBA_DOCKERFILE_ACTIVATE=1
 WORKDIR /opt/build/vtk
-ADD --link --keep-git-dir=true https://github.com/Kitware/VTK.git#v9.2.6 src
+ARG MAMBA_DOCKERFILE_ACTIVATE=1
+ADD --link --keep-git-dir=true https://github.com/Kitware/VTK.git#v9.3.0 src
 ARG BUILD_VTK_CUDA=OFF
-SHELL ["/bin/bash", "-eE", "-o", "pipefail", "-c"]
+ARG BUILD_NICE
+ARG GCC_OPTFLAGS="-O3 -march=native -mtune=native -flto=auto -DEIGEN_USE_MKL_ALL"
+SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 RUN <<-EOF
+    
+    whoami
+    ls -la 
 
     patch src/ThirdParty/vtkm/vtkvtkm/vtk-m/vtkm/exec/cuda/internal/ExecutionPolicy.h <(printf '18a19\n> #include <thrust/sort.h>\n')
 
     export INTEL_OPTIMIZER_IPO=""
+    export USE_INTEL_COMPILER=0
     source "/opt/build/compilervars.sh"
-    fix_cmake_intel_openmp
     mkdir -p build && cd build
-    export NVCC_APPEND_FLAGS="--forward-unknown-to-host-compiler --allow-unsupported-compiler"
-    set_compiler_flags "-wd1890 -inline-factor=200 ${EIGEN_MKL_ALL_FLAGS}" "${INTEL_MKL_TBB_STATIC_FLAGS} -static-intel"
-    cmake -Wno-dev -GNinja \
+    set_compiler_flags "" ""
+    if [ -n "${GCC_OPTFLAGS:-}" ]; then
+        export CXXFLAGS="${CXXFLAGS:+${CXXFLAGS} }${GCC_OPTFLAGS:-}"
+        export CFLAGS="${CFLAGS:+${CFLAGS} }${GCC_OPTFLAGS:-}"
+    fi
+
+    export CC="$(which gcc-12)"
+    export CXX="$(which g++-12)"
+    export CUDAHOSTCXX="$(which g++-12)"
+    export NVCC_APPEND_FLAGS="--forward-unknown-to-host-compiler"
+
+    if [ -n "${BUILD_NICE:-}" ]; then
+        RUNCMD="nice -n ${BUILD_NICE} cmake"
+    else
+        RUNCMD="cmake"
+    fi
+
+    ${RUNCMD} -Wno-dev -GNinja \
             -D BUILD_SHARED_LIBS:BOOL=ON \
             -D BUILD_TESTING:BOOL=OFF \
             -D VTK_ENABLE_REMOTE_MODULES:BOOL=OFF \
@@ -302,7 +332,7 @@ RUN <<-EOF
             -D VTKm_ENABLE_RENDERING:BOOL=OFF \
             -D VTKm_ENABLE_TBB:BOOL=ON \
             ../src || { tail -v -n 50 CMakeFiles/*.log 2>/dev/null || true; exit 1; }
-    cmake --build . -- -k 1
+    cmake --build . -- -k 1 -l ${NCPU}
     cmake --install .
 EOF
 
