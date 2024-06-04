@@ -42,6 +42,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,t
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq
     apt-get install -yq --no-install-recommends \
+        bash \
+        bash-completion \
         bc \
         dc \
         dbus \
@@ -55,10 +57,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,t
         gzip \
         less \
         moreutils \
-        parallel \
         nano \
-        net-tools \
-        openssh-client \
         ripgrep \
         tar \
         tree \
@@ -72,7 +71,31 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,t
     test -f /usr/share/doc/kitware-archive-keyring/copyright || wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null
     echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ jammy main' | tee /etc/apt/sources.list.d/kitware.list >/dev/null
 
-    apt-get update -qq
+    wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
+    dpkg -i cuda-keyring_1.1-1_all.deb
+
+    apt-get update -qq && apt-get upgrade -yq
+
+EOF
+
+# Install FSL:
+SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
+RUN 
+    <<-EOF
+
+    # Set up micromamba and install FSL:
+    export CI=1
+    micromamba install --yes --verbose -n base anaconda::python=3.11
+    micromamba install --yes --verbose -n base --channel https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public --channel conda-forge fsl-avwutils fsl-flirt fsl-bet2
+    micromamba clean --yes --all
+
+EOF
+
+# Install libs:
+SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,target=/var/lib/apt,sharing=locked --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
+    <<-EOF
+
     apt-get install -yq --no-install-recommends \
         freeglut3-dev \
         libarpack2-dev \
@@ -116,19 +139,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,t
         qtbase5-dev \
         uuid-dev \
         zlib1g-dev
-EOF
 
-# Install tools:
-ENV ENV_NAME="${FSLDIR}"
-SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,target=/var/lib/apt,sharing=locked --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
-    <<-EOF
-
-    # Set up micromamba and install FSL:
-    export CI=1
-    micromamba create --yes --verbose --prefix "${ENV_NAME}" --channel https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public --channel conda-forge fsl-avwutils fsl-flirt fsl-bet2
-    micromamba clean --yes --all
-    micromamba env list >&2
 EOF
 
 # Install build tools:
@@ -140,54 +151,37 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,t
     <<-EOF
 
     export DEBIAN_FRONTEND=noninteractive
+
+    apt-get update -yq
     apt-get install -yq \
         gcc-12 \
         g++-12 \
         cmake \
-        intel-oneapi-ccl-devel-2021.10.0 \
-        intel-oneapi-common-licensing-2023.2.0 \
-        intel-oneapi-common-vars \
-        intel-oneapi-ipp-devel-2021.9.0 \
-        intel-oneapi-ippcp-devel-2021.8.0 \
-        intel-oneapi-mkl-devel-2023.2.0 \
-        intel-oneapi-tbb-devel-2021.10.0 \
-        intel-oneapi-compiler-dpcpp-cpp-and-cpp-classic-2023.2.0 \
-        libarchive13 \
-        libtool \
         make \
-        ninja-build
+        ninja-build \
+        libtool \
+        libarchive13
 
-        cmake_dir="$(find /usr/share -maxdepth 1 -maxdepth 1 -follow -name 'cmake-*.*' | sort -V | head -n 1 || true)"
+    cmake_dir="$(find /usr/share -maxdepth 1 -maxdepth 1 -follow -name 'cmake-*.*' | sort -V | head -n 1 || true)"
 
-        [ -n "${cmake_dir:-}" ] || { echo "ERROR: cmake directory not found in /usr/share" >&2; exit 1; }
-        ln -sv "${cmake_dir}" /opt/build/cmake-dir
+    [ -n "${cmake_dir:-}" ] || { echo "ERROR: cmake directory not found in /usr/share" >&2; exit 1; }
+    ln -sv "${cmake_dir}" /opt/build/cmake-dir
 
-        # create a low-priority alternative for /usr/bin/gcc, /usr/bin/g++, and /usr/bin/gcov using gcc-11
-        update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 110 --slave /usr/bin/g++ g++ /usr/bin/g++-11 --slave /usr/bin/gcov gcov /usr/bin/gcov-11
+    # create a high-priority alternative for /usr/bin/gcc, /usr/bin/g++, and /usr/bin/gcov using gcc-12
+    update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 120 --slave /usr/bin/g++ g++ /usr/bin/g++-12 --slave /usr/bin/gcov gcov /usr/bin/gcov-12
 
-        # create a high-priority alternative for /usr/bin/gcc, /usr/bin/g++, and /usr/bin/gcov using gcc-12
-        update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 120 --slave /usr/bin/g++ g++ /usr/bin/g++-12 --slave /usr/bin/gcov gcov /usr/bin/gcov-12
+    apt-get install -yq \
+        intel-oneapi-compiler-dpcpp-cpp-and-cpp-classic \
+        intel-oneapi-mkl-classic-devel \
+        intel-oneapi-tbb-devel \
+        intel-oneapi-tlt
 
-        # make sure you didn't goof anything up, should say version 12.1.0
-        gcc --version
+    apt-get install -yq cuda-toolkit-12-4
+    
+    gcc --version
+
 EOF
 
-# Install CUDA tools:
-ARG MAMBA_DOCKERFILE_ACTIVATE=1
-WORKDIR "/opt/build"
-SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,target=/var/lib/apt,sharing=locked --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
-    <<-EOF
-
-    export DEBIAN_FRONTEND=noninteractive
-
-    if ! apt-cache show cuda-toolkit-12-4 >/dev/null 2>&1; then
-        wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
-        dpkg -i cuda-keyring_1.1-1_all.deb
-        apt-get update -o Dir::Etc::sourcelist="/etc/apt/sources.list.d/cuda-ubuntu2204-x86_64.list" -o Dir::Etc::sourceparts="-" -o APT::Get::List-Cleanup="0"
-    fi
-    apt-get -yq install cuda-toolkit-12-4
-EOF
 
 WORKDIR "/opt/build"
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
@@ -203,14 +197,14 @@ RUN <<-EOF
     update-alternatives --install /usr/lib/x86_64-linux-gnu/liblapack.so.3 liblapack.so.3-x86_64-linux-gnu  "${MKLROOT}/lib/intel64/libmkl_rt.so" 50
     
     # Update dynamic linker
-    echo "${ONEAPI_ROOT}/compiler/latest/linux/compiler/lib/intel64_lin" >> /etc/ld.so.conf.d/1-intel.conf
+    echo "${ONEAPI_ROOT}/compi4ler/latest/linux/compiler/lib/intel64_lin" >> /etc/ld.so.conf.d/1-intel.conf
     echo "${ONEAPI_ROOT}/compiler/latest/linux/lib" >> /etc/ld.so.conf.d/1-intel.conf
     echo "${ONEAPI_ROOT}/compiler/latest/linux/lib/x64" >> /etc/ld.so.conf.d/1-intel.conf
     echo "${MKLROOT}/lib/intel64" >> /etc/ld.so.conf.d/1-intel.conf
     echo "${TBBROOT}/lib/intel64/gcc4.8" >> /etc/ld.so.conf.d/1-intel.conf
 
-    ln -s /usr/local/cuda-12.4 /usr/local/cuda
     ldconfig
+
     cd /opt/build/cmake-dir
     fix_cmake_intel_openmp
 EOF
@@ -242,44 +236,38 @@ EOF
 FROM builder AS build-vtk
 WORKDIR /opt/build/vtk
 ARG MAMBA_DOCKERFILE_ACTIVATE=1
-ADD --link --keep-git-dir=true https://github.com/Kitware/VTK.git#v9.3.0 src
-ARG BUILD_VTK_CUDA=OFF
-ARG BUILD_NICE
-ARG GCC_OPTFLAGS="-O3 -march=native -mtune=native -flto=auto -DEIGEN_USE_MKL_ALL"
+ADD --link --keep-git-dir=true https://github.com/Kitware/VTK.git#832bea6a0490282cc16ed5392186bb498d503abd src
+ARG GCC_OPTFLAGS="-O3 -march=skylake -mtune=skylake -flto=auto -DEIGEN_USE_MKL_ALL"
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 RUN <<-EOF
-    
-    whoami
-    ls -la 
 
-    patch src/ThirdParty/vtkm/vtkvtkm/vtk-m/vtkm/exec/cuda/internal/ExecutionPolicy.h <(printf '18a19\n> #include <thrust/sort.h>\n')
+    git submodule update --init --recursive
+
+    ( cd ../src && git submodule update --init --remote ThirdParty/vtkm/vtkvtkm/vtk-m && cd ThirdParty/vtkm/vtkvtkm/vtk-m && git checkout 6eae30063 )
+
+    #patch src/ThirdParty/vtkm/vtkvtkm/vtk-m/vtkm/exec/cuda/internal/ExecutionPolicy.h <(printf '18a19\n> #include <thrust/sort.h>\n')
 
     export INTEL_OPTIMIZER_IPO=""
     export USE_INTEL_COMPILER=0
     source "/opt/build/compilervars.sh"
     mkdir -p build && cd build
-    set_compiler_flags "" ""
-    if [ -n "${GCC_OPTFLAGS:-}" ]; then
-        export CXXFLAGS="${CXXFLAGS:+${CXXFLAGS} }${GCC_OPTFLAGS:-}"
-        export CFLAGS="${CFLAGS:+${CFLAGS} }${GCC_OPTFLAGS:-}"
-    fi
+    export INTEL_OPTIMIZER_IPO="-ipo-separate"
+    set_compiler_flags "" "-w2 -wd869 -wd593 -wd1286" "${INTEL_MKL_TBB_STATIC_FLAGS} -static-intel"
+    export CUDAHOSTCXX="$(which g++)"
+    export NVCC_CCBIN="${CUDAHOSTCXX}"
+    export CUDAFLAGS="-std=c++17"
+    gccNvccFlags="$(for x in ${GCC_OPTFLAGS:-}; do echo "-Xcompiler=$x"; done)"
+    export NVCC_APPEND_FLAGS="--forward-unknown-to-host-compiler --expt-relaxed-constexpr --extended-lambda --std c++17 --generate-code arch=compute_86,code=sm_86 --generate-code arch=compute_75,code=sm_75 --generate-code arch=compute_89,code=sm_89 $gccNvccFlags"
 
-    export CC="$(which gcc-12)"
-    export CXX="$(which g++-12)"
-    export CUDAHOSTCXX="$(which g++-12)"
-    export NVCC_APPEND_FLAGS="--forward-unknown-to-host-compiler"
-
-    if [ -n "${BUILD_NICE:-}" ]; then
-        RUNCMD="nice -n ${BUILD_NICE} cmake"
-    else
-        RUNCMD="cmake"
-    fi
-
-    ${RUNCMD} -Wno-dev -GNinja \
+    nice -n19 cmake -Wno-dev -GNinja \
+            -D _LIBCUDACXX_HAS_CUDA_ATOMIC_IMPL=ON \
+            -D CMAKE_CXX_STANDARD=17 \
             -D BUILD_SHARED_LIBS:BOOL=ON \
             -D BUILD_TESTING:BOOL=OFF \
+            -D LLVM_PARALLEL_LINK_JOBS=2 \
             -D VTK_ENABLE_REMOTE_MODULES:BOOL=OFF \
-            -D VTK_ENABLE_WRAPPING=OFF \
+            -D VTK_ENABLE_WRAPPING=ON \
+            -D VTK_GROUP_ENABLE_MPI:STRING=WANT \
             -D VTK_GROUP_ENABLE_Qt:STRING=DONT_WANT \
             -D VTK_GROUP_ENABLE_Rendering:STRING=DONT_WANT \
             -D VTK_GROUP_ENABLE_StandAlone:STRING=DONT_WANT \
@@ -293,7 +281,9 @@ RUN <<-EOF
             -D VTK_MODULE_ENABLE_VTK_CommonExecutionModel:STRING=WANT \
             -D VTK_MODULE_ENABLE_VTK_CommonMath:STRING=WANT \
             -D VTK_MODULE_ENABLE_VTK_CommonTransforms:STRING=WANT \
+            -D VTK_MODULE_ENABLE_VTK_DomainsMicroscopy:STRING=DONT_WANT \
             -D VTK_MODULE_ENABLE_VTK_eigen:STRING=WANT \
+            -D VTK_MODULE_ENABLE_VTK_fides:STRING=DONT_WANT \
             -D VTK_MODULE_ENABLE_VTK_FiltersCore:STRING=WANT \
             -D VTK_MODULE_ENABLE_VTK_FiltersExtraction:STRING=WANT \
             -D VTK_MODULE_ENABLE_VTK_FiltersFlowPaths:STRING=WANT \
@@ -301,35 +291,62 @@ RUN <<-EOF
             -D VTK_MODULE_ENABLE_VTK_FiltersGeometry:STRING=WANT \
             -D VTK_MODULE_ENABLE_VTK_FiltersHybrid:STRING=WANT \
             -D VTK_MODULE_ENABLE_VTK_FiltersModeling:STRING=WANT \
+            -D VTK_MODULE_ENABLE_VTK_FiltersOpenTURNS:STRING=DONT_WANT \
             -D VTK_MODULE_ENABLE_VTK_FiltersParallel:STRING=WANT \
             -D VTK_MODULE_ENABLE_VTK_FiltersSMP:STRING=WANT \
             -D VTK_MODULE_ENABLE_VTK_FiltersSources:STRING=WANT \
             -D VTK_MODULE_ENABLE_VTK_ImagingCore:STRING=WANT \
             -D VTK_MODULE_ENABLE_VTK_ImagingStencil:STRING=WANT \
+            -D VTK_MODULE_ENABLE_VTK_IOADIOS2:STRING=DONT_WANT \
+            -D VTK_MODULE_ENABLE_VTK_IOCesium3DTiles:STRING=DONT_WANT \
+            -D VTK_MODULE_ENABLE_VTK_IOCGNSReader:STRING=DONT_WANT \
+            -D VTK_MODULE_ENABLE_VTK_IOChemistry:STRING=DONT_WANT \
+            -D VTK_MODULE_ENABLE_VTK_IOCityGML:STRING=DONT_WANT \
+            -D VTK_MODULE_ENABLE_VTK_IOCONVERGECFD:STRING=DONT_WANT \
+            -D VTK_MODULE_ENABLE_VTK_IOExport:STRING=DONT_WANT \
+            -D VTK_MODULE_ENABLE_VTK_IOFFMPEG:STRING=DONT_WANT \
+            -D VTK_MODULE_ENABLE_VTK_IOGeometry:STRING=DONT_WANT \
             -D VTK_MODULE_ENABLE_VTK_IOGeometry:STRING=WANT \
+            -D VTK_MODULE_ENABLE_VTK_IOHDF:STRING=DONT_WANT \
+            -D VTK_MODULE_ENABLE_VTK_IOImage:STRING=DONT_WANT \
             -D VTK_MODULE_ENABLE_VTK_IOImage:STRING=WANT \
+            -D VTK_MODULE_ENABLE_VTK_IOImport:STRING=DONT_WANT \
+            -D VTK_MODULE_ENABLE_VTK_IOIOSS:STRING=DONT_WANT \
+            -D VTK_MODULE_ENABLE_VTK_IOLAS:STRING=DONT_WANT \
             -D VTK_MODULE_ENABLE_VTK_IOLegacy:STRING=WANT \
+            -D VTK_MODULE_ENABLE_VTK_IOLSDyna:STRING=DONT_WANT \
+            -D VTK_MODULE_ENABLE_VTK_IOMotionFX:STRING=DONT_WANT \
+            -D VTK_MODULE_ENABLE_VTK_IOMovie:STRING=DONT_WANT \
+            -D VTK_MODULE_ENABLE_VTK_IOMySQL:STRING=DONT_WANT \
+            -D VTK_MODULE_ENABLE_VTK_IOODBC:STRING=DONT_WANT \
             -D VTK_MODULE_ENABLE_VTK_IOParallel:STRING=WANT \
             -D VTK_MODULE_ENABLE_VTK_IOParallelXML:STRING=WANT \
-            -D VTK_MODULE_ENABLE_VTK_IOPLY:STRING=WANT \
+            -D VTK_MODULE_ENABLE_VTK_IOPDAL:STRING=DONT_WANT \
+            -D VTK_MODULE_ENABLE_VTK_IOPostgreSQL:STRING=DONT_WANT \
+            -D VTK_MODULE_ENABLE_VTK_IOVideo:STRING=DONT_WANT \
             -D VTK_MODULE_ENABLE_VTK_IOXML:STRING=WANT \
             -D VTK_MODULE_ENABLE_VTK_ParallelCore:STRING=WANT \
+            -D VTK_MODULE_ENABLE_VTK_RenderingExternal:STRING=DONT_WANT \
+            -D VTK_MODULE_ENABLE_VTK_RenderingFreeTypeFontConfig:STRING=DONT_WANT \
+            -D VTK_MODULE_ENABLE_VTK_RenderingOpenVR:STRING=DONT_WANT \
             -D VTK_MODULE_ENABLE_VTK_WrappingTools:STRING=DONT_WANT \
             -D VTK_MODULE_USE_EXTERNAL_VTK_eigen:BOOL=ON \
             -D VTK_MODULE_USE_EXTERNAL_VTK_expat:BOOL=ON \
             -D VTK_MODULE_USE_EXTERNAL_VTK_jpeg:BOOL=ON \
             -D VTK_MODULE_USE_EXTERNAL_VTK_libxml2:BOOL=ON \
-            -D VTK_MODULE_USE_EXTERNAL_VTK_lz4:BOOL=ON \
+            -D VTK_MODULE_USE_EXTERNAL_VTK_lz4:BOOL=OFF \
             -D VTK_MODULE_USE_EXTERNAL_VTK_png:BOOL=ON \
-            -D VTK_MODULE_USE_EXTERNAL_VTK_tiff:BOOL=ON \
-            -D VTK_MODULE_USE_EXTERNAL_VTK_zlib:BOOL=ON \
+            -D VTK_MODULE_USE_EXTERNAL_VTK_tiff:BOOL=OFF \
+            -D VTK_MODULE_USE_EXTERNAL_VTK_zlib:BOOL=OFF \
             -D VTK_SMP_ENABLE_TBB:BOOL=ON \
             -D VTK_SMP_IMPLEMENTATION_TYPE=TBB \
-            -D VTK_USE_CUDA:BOOL=${BUILD_VTK_CUDA:-OFF}  \
+            -D VTK_USE_CUDA:BOOL=ON \
             -D VTK_USE_X:BOOL=OFF \
-            -D VTK_WRAP_PYTHON:BOOL=OFF \
-            -D VTKm_ENABLE_CUDA:BOOL=${BUILD_VTK_CUDA:-OFF}  \
+            -D VTK_WRAP_PYTHON:BOOL=ON \
+            -D VTKm_ENABLE_CUDA:BOOL=ON \
+            -D VTKm_ENABLE_DEVELOPER_FLAGS:BOOL=OFF \
             -D VTKm_ENABLE_RENDERING:BOOL=OFF \
+            -D VTKm_ENABLE_TESTING:BOOL=OFF \
             -D VTKm_ENABLE_TBB:BOOL=ON \
             ../src || { tail -v -n 50 CMakeFiles/*.log 2>/dev/null || true; exit 1; }
     cmake --build . -- -k 1 -l ${NCPU}
@@ -409,7 +426,7 @@ RUN <<-EOF
             -D Module_ITKThresholding:BOOL=ON \
             -D Module_ITKTransform:BOOL=ON \
         ../src || { tail -v -n +0 CMakeFiles/*.log || true; exit 1; }
-    cmake --build .
+    cmake --build . -- -k 1 -l ${NCPU}
     cmake --install .
 EOF
 
@@ -452,7 +469,7 @@ RUN <<-EOF
             -D MODULE_Deformable:BOOL=ON \
             -D MODULE_DrawEM:BOOL=ON \
         ../src || { tail -v -n +0 CMakeFiles/*.log || true; exit 1; }
-    cmake --build .
+    cmake --build . -- -k 1 -l ${NCPU}
     cmake --install .
 EOF
 
@@ -548,7 +565,7 @@ RUN <<-EOF
             -D WORKBENCH_USE_QT5_QOPENGL_WIDGET=TRUE \
             -D OpenGL_GL_PREFERENCE=GLVND \
         ../src/src
-    cmake --build .
+    cmake --build . -- -k 1 -l ${NCPU}
     ctest
     cmake --install .
 
@@ -592,7 +609,7 @@ RUN <<-EOF
     cmake -Wno-dev -GNinja \
             -D CMAKE_CXX_STANDARD=17 \
         ../src
-    cmake --build .
+    cmake --build . -- -k 1 -l ${NCPU}
     cmake --install .
     install -v -Dm755 bin/* ${DHCP_PREFIX}/bin
 EOF
@@ -602,16 +619,6 @@ ARG MAMBA_DOCKERFILE_ACTIVATE=1
 WORKDIR "${DHCP_DIR}"
 COPY --chmod=a+rX src/dhcp-pipeline "${DHCP_DIR}"
 COPY version ${DHCP_DIR}/version
-
-# Install extra fsl stuff:
-SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
-RUN <<-EOF
-
-    # Set up micromamba and install FSL:
-    export CI=1
-    micromamba install --yes --verbose --prefix "${ENV_NAME}" --channel https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public --channel conda-forge fsl-flirt fsl-bet2
-    micromamba clean --yes --all
-EOF
 
 SHELL ["/bin/bash", "-eEx", "-c"]
 RUN <<-EOF

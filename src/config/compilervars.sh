@@ -7,7 +7,7 @@ export SETVARS_ARGS="--include-intel-llvm"
 . "${ONEAPI_ROOT:-/opt/intel/oneapi}/setvars.sh" >/dev/null
 export INTEL_OPTIMIZER_IPO="${INTEL_OPTIMIZER_IPO-"-ipo"}"
 export INTEL_OPTIMIZER_FP_MODEL="${INTEL_OPTIMIZER_FP_MODEL-"-fp-model=precise"}"
-export INTEL_OPTIMIZER_FLAGS="${INTEL_OPTIMIZER_FLAGS-"-O3 -axCORE-AVX2,SKYLAKE-AVX512 -qopt-zmm-usage=high ${INTEL_OPTIMIZER_FP_MODEL:+ ${INTEL_OPTIMIZER_FP_MODEL:-}}${INTEL_OPTIMIZER_IPO:+ ${INTEL_OPTIMIZER_IPO:-}}"}"
+export INTEL_OPTIMIZER_FLAGS="${INTEL_OPTIMIZER_FLAGS-"-O3 -xCORE-AVX2 -axRAPTORLAKE,SKYLAKE-AVX512 -qopt-zmm-usage=high ${INTEL_OPTIMIZER_FP_MODEL:+ ${INTEL_OPTIMIZER_FP_MODEL:-}}${INTEL_OPTIMIZER_IPO:+ ${INTEL_OPTIMIZER_IPO:-}}"}"
 
 export INTEL_MKL_TBB_DYNAMIC_FLAGS="-Wl,--push-state,--as-needed -L${MKLROOT}/lib/intel64 -lmkl_intel_lp64 -lmkl_tbb_thread -lmkl_core -lpthread -lm -ldl --pop-state"
 export INTEL_MKL_TBB_STATIC_FLAGS="-Wl,--push-state,--as-needed -Wl,--start-group ${MKLROOT}/lib/intel64/libmkl_intel_lp64.a ${MKLROOT}/lib/intel64/libmkl_tbb_thread.a ${MKLROOT}/lib/intel64/libmkl_core.a -Wl,--end-group -L${TBBROOT}/lib/intel64/gcc4.8 -ltbb -lstdc++ -lpthread -lm -ldl --pop-state"
@@ -32,10 +32,8 @@ export CUDAARCHS="${CUDAARCHS:-86;89}"
 
 
 if [ -d "/usr/local/cuda/bin" ]; then
-	export CUDA_TOOLKIT_ROOT=/usr/local/cuda
+	export CUDA_TOOLKIT_ROOT=/usr/local/cuda-12
 	export CUDACXX="${CUDA_TOOLKIT_ROOT}/bin/nvcc"
-	export PATH=/usr/local/cuda-12.4/bin${PATH:+:${PATH}}
-	export LD_LIBRARY_PATH="/usr/local/cuda-12.4/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
 fi
 
 if [ "${USE_INTEL_COMPILER:-1}" = 1 ]; then
@@ -61,16 +59,8 @@ set_compiler_flags() {
 	export __INTEL_POST_CFLAGS="${__INTEL_POST_CFLAGS:+${__INTEL_POST_CFLAGS:-} }${2:-} ${INTEL_OPTIMIZER_FLAGS:-}"
 
 	# Set ncpus
-	NCPU="${NCPU:-0}"
-	total_nproc="$(nproc || grep -c '^processor[[:space:]]*:' /proc/cpuinfo || true)"
-	total_nproc="${total_nproc:-0}"
-	[ "$total_nproc" -le 0 ] && total_nproc=1
-
-	[ "${NCPU}" -gt "${total_nproc}" ] && NCPU=0
-	[ "${NCPU}" -le 0 ] && NCPU="$((total_nproc - 1))"
-	[ "${NCPU}" -le 0 ] && NCPU=1
-	export CMAKE_BUILD_PARALLEL_LEVEL="${NCPU}"
-	export MAKEFLAGS="-j${NCPU}"
+	export CMAKE_BUILD_PARALLEL_LEVEL="${NCPU:-$(nproc)}"
+	export MAKEFLAGS="-j${CMAKE_BUILD_PARALLEL_LEVEL}"
 
 	echo "INFO: Using ${NCPU} cpus" >&2
 	echo "INFO: Using __INTEL_PRE_CFLAGS=\"${__INTEL_PRE_CFLAGS:-}\"" >&2
