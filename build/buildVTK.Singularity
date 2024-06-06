@@ -10,7 +10,7 @@ From: dhcp_builder.tar
     set -eEx -o pipefail
 
     mkdir -p /opt/build/vtk && cd "$_"
-    (git clone --branch release --single-branch https://github.com/Kitware/VTK src && cd "$_" git submodule update --init --recursive)
+    (git clone --branch release --single-branch https://github.com/Kitware/VTK src && cd "$_" && git submodule update --init --recursive)
     mkdir -p build && cd build
 
     source "/opt/build/compilervars.sh"
