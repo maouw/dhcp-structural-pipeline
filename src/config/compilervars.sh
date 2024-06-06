@@ -30,6 +30,9 @@ export CMAKE_INSTALL_PREFIX="${CMAKE_INSTALL_PREFIX:-${DHCP_PREFIX}}"
 export CMAKE_BUILD_TYPE="${CMAKE_BUILD_TYPE:-Release}"
 export CUDAARCHS="${CUDAARCHS:-86;89}"
 
+export NCPU="${NCPU:-$(nproc)}"
+export CMAKE_BUILD_PARALLEL_LEVEL="${CMAKE_BUILD_PARALLEL_LEVEL:-${NCPU}}"
+export MAKEFLAGS="-j${CMAKE_BUILD_PARALLEL_LEVEL}"
 
 if [ -d "/usr/local/cuda/bin" ]; then
 	export CUDA_TOOLKIT_ROOT=/usr/local/cuda-12
@@ -58,9 +61,6 @@ set_compiler_flags() {
 	# Set optimizer flags
 	export __INTEL_POST_CFLAGS="${__INTEL_POST_CFLAGS:+${__INTEL_POST_CFLAGS:-} }${2:-} ${INTEL_OPTIMIZER_FLAGS:-}"
 
-	# Set ncpus
-	export CMAKE_BUILD_PARALLEL_LEVEL="${NCPU:-$(nproc)}"
-	export MAKEFLAGS="-j${CMAKE_BUILD_PARALLEL_LEVEL}"
 
 	echo "INFO: Using ${NCPU} cpus" >&2
 	echo "INFO: Using __INTEL_PRE_CFLAGS=\"${__INTEL_PRE_CFLAGS:-}\"" >&2

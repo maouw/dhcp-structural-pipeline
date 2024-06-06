@@ -2,7 +2,7 @@
 ## Build Docker image for execution of dhcp pipelines within a Docker
 ## container with all modules and applications available in the image
 
-FROM mambaorg/micromamba:jammy as base
+FROM mambaorg/micromamba:jammy AS base
 
 USER root
 
@@ -23,6 +23,7 @@ ENV DHCP_PREFIX="/opt/dhcp"
 ENV DHCP_DIR="${DHCP_PREFIX}/src"
 ENV DRAWEMDIR="${DHCP_PREFIX}/share/DrawEM"
 ENV FSLDIR="${DHCP_PREFIX}/fsl"
+ENV ENV_NAME="${FSLDIR}"
 ENV PATH="${DHCP_PREFIX}/bin:${FSLDIR}/bin:${PATH}"
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 RUN <<-EOF
@@ -40,7 +41,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,t
     <<-EOF
 
     export DEBIAN_FRONTEND=noninteractive
-    apt-get update -qq
+    apt-get update -q
     apt-get install -yq --no-install-recommends \
         bash \
         bash-completion \
@@ -57,6 +58,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,t
         gzip \
         less \
         moreutils \
+        patch \
         nano \
         ripgrep \
         tar \
@@ -74,25 +76,72 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,t
     wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
     dpkg -i cuda-keyring_1.1-1_all.deb
 
-    apt-get update -qq && apt-get upgrade -yq
+    apt-get update -q && apt-get upgrade -yq
 
 EOF
 
 # Install FSL:
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
-RUN 
+RUN \
     <<-EOF
 
     # Set up micromamba and install FSL:
     export CI=1
-    micromamba install --yes --verbose -n base anaconda::python=3.11
-    micromamba install --yes --verbose -n base --channel https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public --channel conda-forge fsl-avwutils fsl-flirt fsl-bet2
+    micromamba create --yes --verbose --prefix "${FSLDIR}" anaconda::python=3.11
+    micromamba install --yes --verbose --prefix "${FSLDIR}" --channel https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public --channel conda-forge fsl-avwutils fsl-flirt fsl-bet2
     micromamba clean --yes --all
 
 EOF
 
+# Install build tools:
+FROM base AS builder
+WORKDIR /opt/build
+SHELL ["/bin/bash", "-eE", "-o", "pipefail", "-c"]
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,target=/var/lib/apt,sharing=locked --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
+    <<-EOF
+
+    export DEBIAN_FRONTEND=noninteractive
+
+    apt-get install -yq --no-install-recommends build-essential
+
+    apt-get install -yq gcc-12 g++-12
+
+    apt-get install -yq --no-install-recommends cmake make ninja-build libtool libarchive13
+
+    cmake_dir="$(find /usr/share -maxdepth 1 -maxdepth 1 -follow -name 'cmake-*.*' | sort -V | head -n 1 || true)"
+
+    [ -n "${cmake_dir:-}" ] || { echo "ERROR: cmake directory not found in /usr/share" >&2; exit 1; }
+    ln -sv "${cmake_dir}" /opt/build/cmake-dir
+
+    # create a high-priority alternative for /usr/bin/gcc, /usr/bin/g++, and /usr/bin/gcov using gcc-12
+    update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 120 --slave /usr/bin/g++ g++ /usr/bin/g++-12 --slave /usr/bin/gcov gcov /usr/bin/gcov-12
+
+EOF
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,target=/var/lib/apt,sharing=locked --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
+    <<-EOF
+
+    export DEBIAN_FRONTEND=noninteractive
+
+    apt-get install -yq --no-install-recommends cuda-compiler-12-4 cuda-libraries-12-4 cuda-libraries-dev-12-4
+
+EOF
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,target=/var/lib/apt,sharing=locked --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
+    <<-EOF
+
+    export DEBIAN_FRONTEND=noninteractive
+
+    apt-get install -yq \
+        intel-oneapi-compiler-dpcpp-cpp-and-cpp-classic \
+        intel-oneapi-mkl-classic-devel \
+        intel-oneapi-tbb-devel \
+        intel-oneapi-tlt
+
+EOF
+
 # Install libs:
-SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
+SHELL ["/bin/bash", "-eE", "-o", "pipefail", "-c"]
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,target=/var/lib/apt,sharing=locked --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
     <<-EOF
 
@@ -140,48 +189,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,t
         uuid-dev \
         zlib1g-dev
 
-EOF
-
-# Install build tools:
-FROM base AS builder
-ARG MAMBA_DOCKERFILE_ACTIVATE=1
-WORKDIR "/opt/build"
-SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,target=/var/lib/apt,sharing=locked --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
-    <<-EOF
-
-    export DEBIAN_FRONTEND=noninteractive
-
-    apt-get update -yq
-    apt-get install -yq \
-        gcc-12 \
-        g++-12 \
-        cmake \
-        make \
-        ninja-build \
-        libtool \
-        libarchive13
-
-    cmake_dir="$(find /usr/share -maxdepth 1 -maxdepth 1 -follow -name 'cmake-*.*' | sort -V | head -n 1 || true)"
-
-    [ -n "${cmake_dir:-}" ] || { echo "ERROR: cmake directory not found in /usr/share" >&2; exit 1; }
-    ln -sv "${cmake_dir}" /opt/build/cmake-dir
-
-    # create a high-priority alternative for /usr/bin/gcc, /usr/bin/g++, and /usr/bin/gcov using gcc-12
-    update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 120 --slave /usr/bin/g++ g++ /usr/bin/g++-12 --slave /usr/bin/gcov gcov /usr/bin/gcov-12
-
-    apt-get install -yq \
-        intel-oneapi-compiler-dpcpp-cpp-and-cpp-classic \
-        intel-oneapi-mkl-classic-devel \
-        intel-oneapi-tbb-devel \
-        intel-oneapi-tlt
-
-    apt-get install -yq cuda-toolkit-12-4
     
     gcc --version
 
 EOF
-
 
 WORKDIR "/opt/build"
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
@@ -197,7 +208,7 @@ RUN <<-EOF
     update-alternatives --install /usr/lib/x86_64-linux-gnu/liblapack.so.3 liblapack.so.3-x86_64-linux-gnu  "${MKLROOT}/lib/intel64/libmkl_rt.so" 50
     
     # Update dynamic linker
-    echo "${ONEAPI_ROOT}/compi4ler/latest/linux/compiler/lib/intel64_lin" >> /etc/ld.so.conf.d/1-intel.conf
+    echo "${ONEAPI_ROOT}/compiler/latest/linux/compiler/lib/intel64_lin" >> /etc/ld.so.conf.d/1-intel.conf
     echo "${ONEAPI_ROOT}/compiler/latest/linux/lib" >> /etc/ld.so.conf.d/1-intel.conf
     echo "${ONEAPI_ROOT}/compiler/latest/linux/lib/x64" >> /etc/ld.so.conf.d/1-intel.conf
     echo "${MKLROOT}/lib/intel64" >> /etc/ld.so.conf.d/1-intel.conf
@@ -236,14 +247,14 @@ EOF
 FROM builder AS build-vtk
 WORKDIR /opt/build/vtk
 ARG MAMBA_DOCKERFILE_ACTIVATE=1
-ADD --link --keep-git-dir=true https://github.com/Kitware/VTK.git#832bea6a0490282cc16ed5392186bb498d503abd src
-ARG GCC_OPTFLAGS="-O3 -march=skylake -mtune=skylake -flto=auto -DEIGEN_USE_MKL_ALL"
+ADD --keep-git-dir=true https://github.com/Kitware/VTK.git#832bea6a0490282cc16ed5392186bb498d503abd src
+ARG GCC_OPTFLAGS="-O3 -march=skylake -mtune=skylake -DEIGEN_USE_MKL_ALL"
+ARG NCPU
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 RUN <<-EOF
 
-    git submodule update --init --recursive
-
-    ( cd ../src && git submodule update --init --remote ThirdParty/vtkm/vtkvtkm/vtk-m && cd ThirdParty/vtkm/vtkvtkm/vtk-m && git checkout 6eae30063 )
+    (cd src && git submodule update --init --recursive )
+    (cd src/ThirdParty/vtkm/vtkvtkm/vtk-m && git fetch origin release && git checkout 6eae30063 )
 
     #patch src/ThirdParty/vtkm/vtkvtkm/vtk-m/vtkm/exec/cuda/internal/ExecutionPolicy.h <(printf '18a19\n> #include <thrust/sort.h>\n')
 
@@ -251,23 +262,20 @@ RUN <<-EOF
     export USE_INTEL_COMPILER=0
     source "/opt/build/compilervars.sh"
     mkdir -p build && cd build
-    export INTEL_OPTIMIZER_IPO="-ipo-separate"
+    #export INTEL_OPTIMIZER_IPO="-ipo-separate"
     set_compiler_flags "" "-w2 -wd869 -wd593 -wd1286" "${INTEL_MKL_TBB_STATIC_FLAGS} -static-intel"
     export CUDAHOSTCXX="$(which g++)"
     export NVCC_CCBIN="${CUDAHOSTCXX}"
     export CUDAFLAGS="-std=c++17"
-    gccNvccFlags="$(for x in ${GCC_OPTFLAGS:-}; do echo "-Xcompiler=$x"; done)"
-    export NVCC_APPEND_FLAGS="--forward-unknown-to-host-compiler --expt-relaxed-constexpr --extended-lambda --std c++17 --generate-code arch=compute_86,code=sm_86 --generate-code arch=compute_75,code=sm_75 --generate-code arch=compute_89,code=sm_89 $gccNvccFlags"
+    gccNvccFlags="$(for x in ${GCC_OPTFLAGS:-}; do echo "-Xcompiler=$x"; done | paste -d' ' -s)"
+    export NVCC_APPEND_FLAGS="-Xcompiler=-DEIGEN_USE_MKL -Xcompiler=-DEIGEN_USE_MKL_ALL -Xcompiler=-std=c++17 -Xcompiler=-march=skylake -Xcompiler=-O3 -Xcompiler=-m64 -Xcompiler=-lstdc++ -Xcompiler=-mtune=skylake --forward-unknown-to-host-compiler --expt-relaxed-constexpr --extended-lambda --std c++17 --generate-code arch=compute_86,code=sm_86 --generate-code arch=compute_75,code=sm_75 --generate-code arch=compute_89,code=sm_89"
 
     nice -n19 cmake -Wno-dev -GNinja \
-            -D _LIBCUDACXX_HAS_CUDA_ATOMIC_IMPL=ON \
             -D CMAKE_CXX_STANDARD=17 \
             -D BUILD_SHARED_LIBS:BOOL=ON \
             -D BUILD_TESTING:BOOL=OFF \
-            -D LLVM_PARALLEL_LINK_JOBS=2 \
             -D VTK_ENABLE_REMOTE_MODULES:BOOL=OFF \
             -D VTK_ENABLE_WRAPPING=ON \
-            -D VTK_GROUP_ENABLE_MPI:STRING=WANT \
             -D VTK_GROUP_ENABLE_Qt:STRING=DONT_WANT \
             -D VTK_GROUP_ENABLE_Rendering:STRING=DONT_WANT \
             -D VTK_GROUP_ENABLE_StandAlone:STRING=DONT_WANT \
@@ -349,7 +357,7 @@ RUN <<-EOF
             -D VTKm_ENABLE_TESTING:BOOL=OFF \
             -D VTKm_ENABLE_TBB:BOOL=ON \
             ../src || { tail -v -n 50 CMakeFiles/*.log 2>/dev/null || true; exit 1; }
-    cmake --build . -- -k 1 -l ${NCPU}
+    cmake --build . -- -j "${NCPU}" -k 1 -l "${NCPU}"
     cmake --install .
 EOF
 
