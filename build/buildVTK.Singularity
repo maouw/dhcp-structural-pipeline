@@ -1,5 +1,5 @@
-Bootstrap: docker
-From: mambaorg/micr
+Bootstrap: docker-archive
+From: dhcp_builder.tar
 
 %arguments
     GCC_OPTFLAGS=-O3 -march=skylake -mtune=skylake -DEIGEN_USE_MKL_ALL
