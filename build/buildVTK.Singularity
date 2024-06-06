@@ -2,8 +2,7 @@ Bootstrap: docker-archive
 From: dhcp_builder.tar
 
 %arguments
-    GCC_OPTFLAGS=-O3 -march=skylake -mtune=skylake -DEIGEN_USE_MKL_ALL
-    INTEL_OPTIMIZER_IPO=-qoverride-limits -no-inline-factor 800 -ipo
+    ARG_INTEL_OPTIMIZER_FLAGS=-O3 -xCORE-AVX2 -axSKYLAKE,SKYLAKE-AVX512 -qopt-zmm-usage=high -qoverride-limits -no-inline-factor 800 -ipo -fp-model=precise
 
 %post -c /bin/bash
     PS4='+${LINENO:-} '
@@ -14,11 +13,11 @@ From: dhcp_builder.tar
     mkdir -p build && cd build
 
     source "/opt/build/compilervars.sh"
-
-    export GCC_OPTFLAGS="-O3 -march=skylake -mtune=skylake -DEIGEN_USE_MKL_ALL"
+    unset INTEL_OPTIMIZER_FLAGS
+    export INTEL_OPTIMIZER_FLAGS="${ARG_INTEL_OPTIMIZER_FLAGS}"
     #export INTEL_OPTIMIZER_IPO="-ipo-separate"
-    export INTEL_OPTIMIZER_IPO="${INTEL_OPTIMIZER_IPO:-}"
-    set_compiler_flags "" "-w2 -wd869 -wd593 -wd1286 -wd186 -wd612 -wd111 -wd654 -wd1125" "${INTEL_MKL_TBB_STATIC_FLAGS} -static-intel"
+    
+    set_compiler_flags "" "-w2 -wd869 -wd593 -wd1286 -wd186 -wd612 -wd111 -wd654 -wd1125 -Wp,-DEIGEN_USE_MKL,-DEIGEN_USE_MKL_ALL ${INTEL_MKL_TBB_STATIC_FLAGS} -static-intel"
     export CUDAHOSTCXX="$(which g++12)"
     export NVCC_CCBIN="${CUDAHOSTCXX}"
     export CUDAFLAGS="-std=c++17"
@@ -92,6 +91,7 @@ From: dhcp_builder.tar
         -D VTK_MODULE_ENABLE_VTK_RenderingFreeTypeFontConfig:STRING=DONT_WANT \
         -D VTK_MODULE_ENABLE_VTK_RenderingOpenVR:STRING=DONT_WANT \
         -D VTK_MODULE_ENABLE_VTK_WrappingTools:STRING=DONT_WANT \
+        -D VTK_MODULE_USE_EXTERNAL_VTK_eigen:BOOL=ON \
         -D VTK_SMP_ENABLE_TBB:BOOL=ON \
         -D VTK_SMP_IMPLEMENTATION_TYPE=TBB \
         -D VTK_USE_CUDA:BOOL=ON \
