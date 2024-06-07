@@ -12,12 +12,10 @@ From: dhcp_builder.tar
     (git clone --branch release --single-branch https://github.com/Kitware/VTK src && cd "$_" && git submodule update --init --recursive)
     mkdir -p build && cd build
 
-    source "/opt/build/compilervars.sh"
-    unset INTEL_OPTIMIZER_FLAGS
     export INTEL_OPTIMIZER_FLAGS="{{ARG_INTEL_OPTIMIZER_FLAGS}}"
-    #export INTEL_OPTIMIZER_IPO="-ipo-separate"
-    
-    set_compiler_flags "" "-w2 -wd869 -wd593 -wd1286 -wd186 -wd612 -wd111 -wd654 -wd1125 -Wp,-DEIGEN_USE_MKL,-DEIGEN_USE_MKL_ALL ${INTEL_MKL_TBB_STATIC_FLAGS} -static-intel"
+    source "/opt/build/compilervars.sh"
+
+    set_compiler_flags "" "-w2 -wd869 -wd593 -wd1286 -wd186 -wd612 -wd111 -wd654 -wd1125 -wd11074 -wd11076 -Wp,-DEIGEN_USE_MKL,-DEIGEN_USE_MKL_ALL -L${MKLROOT}/lib/intel64 -lmkl_intel_lp64 -lmkl_tbb_thread -lmkl_core -lpthread -lm -ldl"
     export CUDAHOSTCXX="$(which g++12)"
     export NVCC_CCBIN="${CUDAHOSTCXX}"
     export CUDAFLAGS="-std=c++17"
