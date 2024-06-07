@@ -101,4 +101,4 @@ From: dhcp_builder.tar
         -D VTKm_ENABLE_TESTING:BOOL=OFF \
         -D VTKm_ENABLE_TBB:BOOL=ON \
         ../src || { tail -v -n 50 CMakeFiles/*.log 2>/dev/null || true; exit 1; }
-    cmake --build . -j ${NCPU} -l ${NCPU}
+    cmake --build . -- -j ${NCPU} -l ${NCPU}
