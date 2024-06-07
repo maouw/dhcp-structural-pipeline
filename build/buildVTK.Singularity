@@ -16,12 +16,12 @@ From: dhcp_builder.tar
     source "/opt/build/compilervars.sh"
 
     set_compiler_flags "" "-w2 -wd869 -wd593 -wd1286 -wd186 -wd612 -wd111 -wd654 -wd1125 -wd11074 -wd11076 -Wp,-DEIGEN_USE_MKL,-DEIGEN_USE_MKL_ALL ${INTEL_MKL_TBB_DYNAMIC_FLAGS}"
-    export CUDAHOSTCXX="$(which g++12)"
+    export CUDAHOSTCXX="$(which g++-12)"
     export NVCC_CCBIN="${CUDAHOSTCXX}"
     export CUDAFLAGS="-std=c++17"
-    export NVCC_APPEND_FLAGS="-Xcompiler=-DEIGEN_USE_MKL -Xcompiler=-DEIGEN_USE_MKL_ALL -Xcompiler=-std=c++17 -Xcompiler=-march=skylake -Xcompiler=-O3 -Xcompiler=-m64 -Xcompiler=-lstdc++ -Xcompiler=-mtune=skylake --forward-unknown-to-host-compiler --expt-relaxed-constexpr --extended-lambda --std c++17 --generate-code arch=compute_86,code=sm_86 --generate-code arch=compute_75,code=sm_75 --generate-code arch=compute_89,code=sm_89"
+    export NVCC_APPEND_FLAGS="-Xcompiler=-DEIGEN_USE_MKL -Xcompiler=-DEIGEN_USE_MKL_ALL -Xcompiler=-std=c++17 -Xcompiler=-march=skylake -Xcompiler=-O3 -Xcompiler=-m64 -Xcompiler=-lstdc++ -Xcompiler=-mtune=skylake --forward-unknown-to-host-compiler --expt-relaxed-constexpr --extended-lambda --std c++17 -arch=sm_86 -arch=sm_75"
 
-    nice -n19 cmake -Wno-dev -GNinja \
+    nice -n19 cmake \
         -D CMAKE_CXX_STANDARD=17 \
         -D BUILD_SHARED_LIBS:BOOL=ON \
         -D BUILD_TESTING:BOOL=OFF \
@@ -101,4 +101,4 @@ From: dhcp_builder.tar
         -D VTKm_ENABLE_TESTING:BOOL=OFF \
         -D VTKm_ENABLE_TBB:BOOL=ON \
         ../src || { tail -v -n 50 CMakeFiles/*.log 2>/dev/null || true; exit 1; }
-    cmake --build . -- -j "${NCPU}" -k 1 -l "${NCPU}"
+    cmake --build . -j ${NCPU} -l ${NCPU}

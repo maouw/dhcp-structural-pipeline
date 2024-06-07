@@ -5,9 +5,8 @@ _oldflags="$-"; set +x
 export SETVARS_ARGS="--include-intel-llvm"
 
 . "${ONEAPI_ROOT:-/opt/intel/oneapi}/setvars.sh" >/dev/null
-export INTEL_OPTIMIZER_IPO="${INTEL_OPTIMIZER_IPO-"-ipo"}"
 export INTEL_OPTIMIZER_FP_MODEL="${INTEL_OPTIMIZER_FP_MODEL-"-fp-model=precise"}"
-export INTEL_OPTIMIZER_FLAGS="${INTEL_OPTIMIZER_FLAGS-"-O3 -xCORE-AVX2 -axRAPTORLAKE,SKYLAKE-AVX512 -qopt-zmm-usage=high ${INTEL_OPTIMIZER_FP_MODEL:+ ${INTEL_OPTIMIZER_FP_MODEL:-}}${INTEL_OPTIMIZER_IPO:+ ${INTEL_OPTIMIZER_IPO:-}}"}"
+export INTEL_OPTIMIZER_FLAGS="${INTEL_OPTIMIZER_FLAGS-"-O3 -xCORE-AVX2 -axSKYLAKE-AVX512 -qopt-zmm-usage=high ${INTEL_OPTIMIZER_FP_MODEL:+ ${INTEL_OPTIMIZER_FP_MODEL:-}}${INTEL_OPTIMIZER_IPO:+ ${INTEL_OPTIMIZER_IPO:-}}"}"
 
 export INTEL_MKL_TBB_DYNAMIC_FLAGS="-Wl,--push-state,--as-needed -L${MKLROOT}/lib/intel64 -lmkl_intel_lp64 -lmkl_tbb_thread -lmkl_core -lpthread -lm -ldl --pop-state"
 export INTEL_MKL_TBB_STATIC_FLAGS="-Wl,--push-state,--as-needed -Wl,--start-group ${MKLROOT}/lib/intel64/libmkl_intel_lp64.a ${MKLROOT}/lib/intel64/libmkl_tbb_thread.a ${MKLROOT}/lib/intel64/libmkl_core.a -Wl,--end-group -L${TBBROOT}/lib/intel64/gcc4.8 -ltbb -lstdc++ -lpthread -lm -ldl --pop-state"
@@ -28,7 +27,7 @@ ldconfig
 export CMAKE_PREFIX_PATH="${DHCP_PREFIX}:${CMAKE_PREFIX_PATH:-}"
 export CMAKE_INSTALL_PREFIX="${CMAKE_INSTALL_PREFIX:-${DHCP_PREFIX}}"
 export CMAKE_BUILD_TYPE="${CMAKE_BUILD_TYPE:-Release}"
-export CUDAARCHS="${CUDAARCHS:-86;89}"
+export CUDAARCHS="${CUDAARCHS:-75;86}"
 
 export NCPU="${NCPU:-$(nproc)}"
 export CMAKE_BUILD_PARALLEL_LEVEL="${CMAKE_BUILD_PARALLEL_LEVEL:-${NCPU}}"
@@ -62,7 +61,7 @@ set_compiler_flags() {
 	export __INTEL_POST_CFLAGS="${__INTEL_POST_CFLAGS:+${__INTEL_POST_CFLAGS:-} }${2:-} ${INTEL_OPTIMIZER_FLAGS:-}"
 
 
-	echo "INFO: Using ${NCPU} cpus" >&2
+	echo "INFO: Using ${NCPU} cpus with CMAKE_BUILD_PARALLEL_LEVEL=${CMAKE_BUILD_PARALLEL_LEVEL}" >&2
 	echo "INFO: Using __INTEL_PRE_CFLAGS=\"${__INTEL_PRE_CFLAGS:-}\"" >&2
 	echo "INFO: Using __INTEL_POST_CFLAGS=\"${__INTEL_POST_CFLAGS:-}\"" >&2
 	case "${_oldflags:-}" in *x*) set -x ;; esac
