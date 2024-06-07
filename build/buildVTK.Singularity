@@ -9,13 +9,13 @@ From: dhcp_builder.tar
     set -eEx -o pipefail
 
     mkdir -p /opt/build/vtk && cd "$_"
-    (git clone --branch release --single-branch https://github.com/Kitware/VTK src && cd "$_" && git submodule update --init --recursive)
+    (git clone --branch release --single-branch --depth 1 https://github.com/Kitware/VTK src && cd "$_" && git submodule update --init --recursive)
     mkdir -p build && cd build
 
     export INTEL_OPTIMIZER_FLAGS="{{ARG_INTEL_OPTIMIZER_FLAGS}}"
     source "/opt/build/compilervars.sh"
 
-    set_compiler_flags "" "-w2 -wd869 -wd593 -wd1286 -wd186 -wd612 -wd111 -wd654 -wd1125 -wd11074 -wd11076 -Wp,-DEIGEN_USE_MKL,-DEIGEN_USE_MKL_ALL -L${MKLROOT}/lib/intel64 -lmkl_intel_lp64 -lmkl_tbb_thread -lmkl_core -lpthread -lm -ldl"
+    set_compiler_flags "" "-w2 -wd869 -wd593 -wd1286 -wd186 -wd612 -wd111 -wd654 -wd1125 -wd11074 -wd11076 -Wp,-DEIGEN_USE_MKL,-DEIGEN_USE_MKL_ALL ${INTEL_MKL_TBB_DYNAMIC_FLAGS}"
     export CUDAHOSTCXX="$(which g++12)"
     export NVCC_CCBIN="${CUDAHOSTCXX}"
     export CUDAFLAGS="-std=c++17"
@@ -101,5 +101,5 @@ From: dhcp_builder.tar
         -D VTKm_ENABLE_TESTING:BOOL=OFF \
         -D VTKm_ENABLE_TBB:BOOL=ON \
         ../src || { tail -v -n 50 CMakeFiles/*.log 2>/dev/null || true; exit 1; }
-    cmake --build . -- -j "${NCPU}" -k 1 -l "${NCPU}"
+    cmake --build . -- -k 1 -l "${NCPU}"
     cmake --install .
