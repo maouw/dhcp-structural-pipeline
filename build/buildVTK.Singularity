@@ -2,7 +2,7 @@ Bootstrap: docker-archive
 From: dhcp_builder.tar
 
 %arguments
-    ARG_INTEL_OPTIMIZER_FLAGS=-O3 -xCORE-AVX2 -axSKYLAKE,SKYLAKE-AVX512 -qopt-zmm-usage=high -fp-model=precise
+    ARG_INTEL_OPTIMIZER_FLAGS=-O3 -xSKYLAKE -axSKYLAKE-AVX512 -qopt-zmm-usage=high -fp-model=precise
 
 %post -c /bin/bash
     PS4='+${LINENO:-} '
