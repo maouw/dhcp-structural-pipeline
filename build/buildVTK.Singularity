@@ -19,8 +19,8 @@ From: dhcp_builder.tar
     export CUDAHOSTCXX="$(which g++-12)"
     export NVCC_CCBIN="${CUDAHOSTCXX}"
     export CUDAFLAGS="-std=c++17"
-    export NVCC_APPEND_FLAGS="-Xcompiler=-DEIGEN_USE_MKL -Xcompiler=-DEIGEN_USE_MKL_ALL -Xcompiler=-std=c++17 -Xcompiler=-march=skylake -Xcompiler=-O3 -Xcompiler=-m64 -Xcompiler=-lstdc++ -Xcompiler=-mtune=skylake --forward-unknown-to-host-compiler --expt-relaxed-constexpr --extended-lambda --std c++17 -arch=sm_86 -arch=sm_75"
-
+    export NVCC_APPEND_FLAGS="-Xcompiler=-DEIGEN_USE_MKL -Xcompiler=-DEIGEN_USE_MKL_ALL -Xcompiler=-std=c++17 -Xcompiler=-march=skylake -Xcompiler=-O3 -Xcompiler=-m64 -Xcompiler=-lstdc++ -Xcompiler=-mtune=skylake --forward-unknown-to-host-compiler --expt-relaxed-constexpr --extended-lambda  --generate-code arch=compute_75,code=sm_75 --generate-code arch=compute_86,code=sm_86 --generate-code arch=compute_75,code=sm_75 --generate-code arch=compute_89,code=sm_89"
+    
     nice -n19 cmake \
         -D CMAKE_CXX_STANDARD=17 \
         -D BUILD_SHARED_LIBS:BOOL=ON \
