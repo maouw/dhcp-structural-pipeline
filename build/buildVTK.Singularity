@@ -15,13 +15,12 @@ From: dhcp_builder.tar
     export INTEL_OPTIMIZER_FLAGS="{{ARG_INTEL_OPTIMIZER_FLAGS}}"
     source "/opt/build/compilervars.sh"
 
-    set_compiler_flags "" "-w2 -wd869 -wd593 -wd1286 -wd186 -wd612 -wd111 -wd654 -wd1125 -wd11074 -wd11076 -Wp,-DEIGEN_USE_MKL,-DEIGEN_USE_MKL_ALL ${INTEL_MKL_TBB_DYNAMIC_FLAGS}"
+    set_compiler_flags "" "-w2 -wd869 -wd593 -wd1286 -wd186 -wd612 -wd111 -wd654 -wd1125 -wd11074 -wd11076 -Wp,-DEIGEN_USE_MKL,-DEIGEN_USE_MKL_ALL -std=c++17 ${INTEL_MKL_TBB_DYNAMIC_FLAGS}"
     export CUDAHOSTCXX="$(which g++-12)"
     export NVCC_CCBIN="${CUDAHOSTCXX}"
-    export CUDAFLAGS="-std=c++17"
-    export NVCC_APPEND_FLAGS="-Xcompiler=-DEIGEN_USE_MKL -Xcompiler=-DEIGEN_USE_MKL_ALL -Xcompiler=-std=c++17 -Xcompiler=-march=skylake -Xcompiler=-O3 -Xcompiler=-m64 -Xcompiler=-lstdc++ -Xcompiler=-mtune=skylake --forward-unknown-to-host-compiler --expt-relaxed-constexpr --extended-lambda  --generate-code arch=compute_75,code=sm_75 --generate-code arch=compute_86,code=sm_86 --generate-code arch=compute_75,code=sm_75 --generate-code arch=compute_89,code=sm_89"
+    export NVCC_APPEND_FLAGS="-std=c++17 -Xcompiler=-DEIGEN_USE_MKL -Xcompiler=-DEIGEN_USE_MKL_ALL -Xcompiler=-std=c++17 -Xcompiler=-march=skylake -Xcompiler=-O3 -Xcompiler=-m64 -Xcompiler=-lstdc++ -Xcompiler=-mtune=skylake --forward-unknown-to-host-compiler --expt-relaxed-constexpr --extended-lambda --generate-code arch=compute_75,code=sm_75 --generate-code arch=compute_86,code=sm_86 --generate-code arch=compute_75,code=sm_75 --generate-code arch=compute_89,code=sm_89"
     
-    nice -n19 cmake \
+    nice -n19 cmake -GNinja \
         -D CMAKE_CXX_STANDARD=17 \
         -D BUILD_SHARED_LIBS:BOOL=ON \
         -D BUILD_TESTING:BOOL=OFF \
