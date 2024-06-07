@@ -2,7 +2,7 @@ Bootstrap: docker-archive
 From: dhcp_builder.tar
 
 %arguments
-    ARG_INTEL_OPTIMIZER_FLAGS=-O3 -xCORE-AVX2 -axSKYLAKE,SKYLAKE-AVX512 -qopt-zmm-usage=high -qoverride-limits -no-inline-factor 800 -fp-model=precise
+    ARG_INTEL_OPTIMIZER_FLAGS=-O3 -xCORE-AVX2 -axSKYLAKE,SKYLAKE-AVX512 -qopt-zmm-usage=high -fp-model=precise
 
 %post -c /bin/bash
     PS4='+${LINENO:-} '
@@ -14,7 +14,7 @@ From: dhcp_builder.tar
 
     source "/opt/build/compilervars.sh"
     unset INTEL_OPTIMIZER_FLAGS
-    export INTEL_OPTIMIZER_FLAGS="${ARG_INTEL_OPTIMIZER_FLAGS}"
+    export INTEL_OPTIMIZER_FLAGS="{{ARG_INTEL_OPTIMIZER_FLAGS}}"
     #export INTEL_OPTIMIZER_IPO="-ipo-separate"
     
     set_compiler_flags "" "-w2 -wd869 -wd593 -wd1286 -wd186 -wd612 -wd111 -wd654 -wd1125 -Wp,-DEIGEN_USE_MKL,-DEIGEN_USE_MKL_ALL ${INTEL_MKL_TBB_STATIC_FLAGS} -static-intel"
