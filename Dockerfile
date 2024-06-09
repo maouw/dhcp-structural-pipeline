@@ -19,35 +19,25 @@ RUN rm -f /etc/apt/apt.conf.d/docker-clean; echo 'Binary::apt::APT::Keep-Downloa
 # Acquire::Queue-Mode: Queuing mode; Queue-Mode can be one of host or access which determines how APT parallelizes outgoing connections. host means that one connection per target host will be opened, access means that one connection per URI type will be opened.
 RUN echo 'Acquire::Queue-Mode "host";' > /etc/apt/apt.conf.d/99queue
 
+
+SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 ENV DHCP_PREFIX="/opt/dhcp"
-ENV DHCP_DIR="${DHCP_PREFIX}/src"
-ENV DRAWEMDIR="${DHCP_PREFIX}/share/DrawEM"
 ENV FSLDIR="${DHCP_PREFIX}/fsl"
-ENV ENV_NAME="${FSLDIR}"
-ENV PATH="${DHCP_PREFIX}/bin:${FSLDIR}/bin:${PATH}"
-SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
-RUN <<-EOF
-
-    mkdir -p "${DHCP_PREFIX}"/{bin,etc,lib,libexec,share} "${DHCP_DIR}" "${DRAWEMDIR}"
-    chmod -R a+rX "${DHCP_PREFIX}" "${DHCP_DIR}"
-    echo "${DHCP_PREFIX}/lib" > /etc/ld.so.conf.d/0-dhcp-pipeline.conf
-    ldconfig
-
-EOF
-
-# Install tools:
-SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
+ENV PATH="${DHCP_PREFIX}/bin:${FSLDIR}/bin:${DHCP_PREFIX}/bin:${PATH}"
+ENV ONEAPI_ROOT="/opt/intel/oneapi"
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,target=/var/lib/apt,sharing=locked --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
     <<-EOF
+
+    mkdir -p "${DHCP_PREFIX}"/{bin,etc,lib,libexec,share,src}
+    chmod -R a+rX "${DHCP_PREFIX}"
+    echo "${DHCP_PREFIX}/lib" > /etc/ld.so.conf.d/0-dhcp-pipeline.conf
+    ldconfig
 
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -q
     apt-get install -yq --no-install-recommends \
-        bash \
-        bash-completion \
         bc \
         dc \
-        dbus \
         ca-certificates \
         curl \
         fd-find \
@@ -70,81 +60,116 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,t
     curl -fsSL https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS-2023.PUB | gpg --dearmor > /usr/share/keyrings/intel-oneapi-archive-keyring.gpg
     echo "deb [signed-by=/usr/share/keyrings/intel-oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main " > /etc/apt/sources.list.d/oneAPI.list
 
-    test -f /usr/share/doc/kitware-archive-keyring/copyright || wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null
-    echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ jammy main' | tee /etc/apt/sources.list.d/kitware.list >/dev/null
+    apt-get update -q
+    apt-get install -yq intel-oneapi-mkl-core intel-oneapi-tbb intel-oneapi-openmp
 
-    wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
-    dpkg -i cuda-keyring_1.1-1_all.deb
 
-    apt-get update -q && apt-get upgrade -yq
+    MKLROOT="${ONEAPI_ROOT:-/opt/intel/oneapi}/mkl/latest"
 
-EOF
-
-# Install FSL:
-SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
-RUN \
-    <<-EOF
-
-    # Set up micromamba and install FSL:
-    export CI=1
-    micromamba create --yes --verbose --prefix "${FSLDIR}" anaconda::python=3.11
-    micromamba install --yes --verbose --prefix "${FSLDIR}" --channel https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public --channel conda-forge fsl-avwutils fsl-flirt fsl-bet2
-    micromamba clean --yes --all
+    ## update alternatives
+    update-alternatives --install /usr/lib/x86_64-linux-gnu/libblas.so    libblas.so-x86_64-linux-gnu      "${MKLROOT}/lib/libmkl_rt.so" 50
+    update-alternatives --install /usr/lib/x86_64-linux-gnu/libblas.so.3  libblas.so.3-x86_64-linux-gnu    "${MKLROOT}/lib/libmkl_rt.so" 50
+    update-alternatives --install /usr/lib/x86_64-linux-gnu/liblapack.so liblapack.so-x86_64-linux-gnu    "${MKLROOT}/lib/libmkl_rt.so" 50
+    update-alternatives --install /usr/lib/x86_64-linux-gnu/liblapack.so.3 liblapack.so.3-x86_64-linux-gnu  "${MKLROOT}/lib/libmkl_rt.so" 50
+    
+    # Update dynamic linker
+    echo "${ONEAPI_ROOT}/compiler/latest/linux/compiler/lib/intel64_lin" >> /etc/ld.so.conf.d/1-intel.conf
+    echo "${ONEAPI_ROOT}/compiler/latest/linux/lib" >> /etc/ld.so.conf.d/1-intel.conf
+    echo "${ONEAPI_ROOT}/compiler/latest/linux/lib/x64" >> /etc/ld.so.conf.d/1-intel.conf
+    echo "${MKLROOT}/lib/intel64" >> /etc/ld.so.conf.d/1-intel.conf
+    echo "${TBBROOT}/lib/intel64/gcc4.8" >> /etc/ld.so.conf.d/1-intel.conf
 
 EOF
 
-# Install build tools:
-FROM base AS builder
+RUN micromamba create --yes --verbose --prefix "${FSLDIR}" -c intel intel::python>=3.10 && micromamba clean --yes --all
+
+FROM base AS builder-base
+ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /opt/build
-SHELL ["/bin/bash", "-eE", "-o", "pipefail", "-c"]
+COPY src/build-src/fix-cmake-intel-openmp.sh /opt/build/fix-cmake-intel-openmp.sh
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,target=/var/lib/apt,sharing=locked --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
-    <<-EOF
+    apt-get install -yq gcc-12 g++-12 && \
+    apt-get install -yq --no-install-recommends build-essential make ninja-build libtool libarchive13
 
-    export DEBIAN_FRONTEND=noninteractive
-
-    apt-get install -yq --no-install-recommends build-essential
-
-    apt-get install -yq gcc-12 g++-12
-
-    apt-get install -yq --no-install-recommends cmake make ninja-build libtool libarchive13
-
-    cmake_dir="$(find /usr/share -maxdepth 1 -maxdepth 1 -follow -name 'cmake-*.*' | sort -V | head -n 1 || true)"
-
-    [ -n "${cmake_dir:-}" ] || { echo "ERROR: cmake directory not found in /usr/share" >&2; exit 1; }
-    ln -sv "${cmake_dir}" /opt/build/cmake-dir
-
-    # create a high-priority alternative for /usr/bin/gcc, /usr/bin/g++, and /usr/bin/gcov using gcc-12
-    update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 120 --slave /usr/bin/g++ g++ /usr/bin/g++-12 --slave /usr/bin/gcov gcov /usr/bin/gcov-12
-
-EOF
+RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 120 --slave /usr/bin/g++ g++ /usr/bin/g++-12 --slave /usr/bin/gcov gcov /usr/bin/gcov-12
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,target=/var/lib/apt,sharing=locked --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
-    <<-EOF
+    test -f /usr/share/doc/kitware-archive-keyring/copyright || wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null && \
+    echo "deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ $(. /etc/os-release && echo $UBUNTU_CODENAME) main" | tee /etc/apt/sources.list.d/kitware.list >/dev/null && \
+    apt-get update -q
 
-    export DEBIAN_FRONTEND=noninteractive
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,target=/var/lib/apt,sharing=locked --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
+    apt-get install -yq cmake
 
+RUN cmake_dir="$(find /usr/share -maxdepth 1 -maxdepth 1 -follow -name 'cmake-*.*' | sort -V | head -n 1 || true)" && \
+    [ -n "${cmake_dir:-}" ] || { echo "ERROR: cmake directory not found in /usr/share" >&2; exit 1; } && \
+    ln -sv "${cmake_dir}" /opt/build/cmake-dir && \
+    /opt/build/fix-cmake-intel-openmp.sh /opt/build-cmake-dir
+
+FROM builder-base AS builder-cuda
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,target=/var/lib/apt,sharing=locked --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
+    curl -fsSL -o cuda-keyring.deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu$(. /etc/os-release && echo $VERSION_ID | tr -d '.' | head -c4)/$(uname -p)/cuda-keyring_1.1-1_all.deb && \
+    dpkg -i cuda-keyring.deb && rm -f cuda-keyring.deb && \
+    apt-get update -q
+    
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,target=/var/lib/apt,sharing=locked --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
     apt-get install -yq --no-install-recommends cuda-compiler-12-4 cuda-libraries-12-4 cuda-libraries-dev-12-4
 
-EOF
+RUN ( cd /usr/local; find . -maxdepth 1 -type d -name 'cuda-*' -printf '%f\n' | sort --version-sort | tail -n1 | xargs -I _ ln -sv _ cuda )
+
+FROM builder-cuda AS builder-intel
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,target=/var/lib/apt,sharing=locked --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
+    apt-get install -yq --no-install-recommends intel-oneapi-compiler-dpcpp-cpp-and-cpp-classic && ( . "${ONEAPI_ROOT}/setvars.sh" && cd "${ONEAPI_ROOT}/compiler" && ln -sv "$(basename "${CMPLR_ROOT}")" classic )
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,target=/var/lib/apt,sharing=locked --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
-    <<-EOF
-
-    export DEBIAN_FRONTEND=noninteractive
-
-    apt-get install -yq \
-        intel-oneapi-compiler-dpcpp-cpp-and-cpp-classic \
+    apt-get install -yq --no-install-recommends \
+        intel-oneapi-compiler-dpcpp-cpp \
         intel-oneapi-mkl-classic-devel \
         intel-oneapi-tbb-devel \
         intel-oneapi-tlt
 
+RUN echo 'compiler=classic' > "${ONEAPI_ROOT}/classic.cfg"
+
+FROM builder-intel AS builder
+
+ENV PATH="/usr/local/cuda/bin:${PATH}"
+ENV CPATH="${DHCP_PREFIX}/include:${CPATH:-}"
+ENV LIBRARY_PATH="${DHCP_PREFIX}/lib:${LIBRARY_PATH:-}"
+ENV PKG_CONFIG_PATH="${DHCP_PREFIX}/share/pkgconfig:${PKG_CONFIG_PATH:-}"
+ENV CMAKE_PREFIX_PATH="${DHCP_PREFIX}:${CMAKE_PREFIX_PATH:-}"
+ENV CMAKE_INSTALL_PREFIX="${DHCP_PREFIX}"
+ENV CMAKE_BUILD_TYPE="Release"
+ENV CUDACXX=nvcc
+ENV CUDAARCHS=75;86;89
+
+RUN ldconfig
+
+# Install Eigen 3.4:
+WORKDIR /opt/build/eigen/src
+ADD --link https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz src.tar.gz
+SHELL ["/bin/bash", "-eE", "-o", "pipefail", "-c"]
+RUN <<-EOF
+
+    source "${ONEAPI_ROOT}/setvars.sh" --config="${ONEAPI_ROOT}/classic.cfg" && set -x
+    export CC=icc CXX=icpc
+
+    tar -xzf src.tar.gz --strip-components=1
+    cd ../
+
+    mkdir -p build && cd build
+    cmake -Wno-dev \
+            -D BUILD_TESTING:BOOL=OFF \
+            -D BUILD_DOCUMENTATION:BOOL=OFF \
+            -D BLA_VENDOR=Intel10_64lp \
+        ../src || { tail -v -n +0 CMakeFiles/*.log || true; exit 1; }
+    cmake --build .
+    cmake --install .
+
 EOF
 
 # Install libs:
-SHELL ["/bin/bash", "-eE", "-o", "pipefail", "-c"]
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,target=/var/lib/apt,sharing=locked --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
-    <<-EOF
-
     apt-get install -yq --no-install-recommends \
         freeglut3-dev \
         libarpack2-dev \
@@ -189,93 +214,31 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,t
         uuid-dev \
         zlib1g-dev
 
-    
-    gcc --version
+ENV SETVARS_ARGS="--include-intel-llvm"
 
-EOF
+WORKDIR /opt/build
+COPY src/build-src/CMakeUserPresets.json /opt/build/CMakeUserPresets.json
 
-WORKDIR "/opt/build"
-SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
-COPY src/config/compilervars.sh "/opt/build/compilervars.sh"
-RUN <<-EOF
-
-    source "/opt/build/compilervars.sh"
-
-    ## update alternatives
-    update-alternatives --install /usr/lib/x86_64-linux-gnu/libblas.so    libblas.so-x86_64-linux-gnu      "${MKLROOT}/lib/intel64/libmkl_rt.so" 50
-    update-alternatives --install /usr/lib/x86_64-linux-gnu/libblas.so.3  libblas.so.3-x86_64-linux-gnu    "${MKLROOT}/lib/intel64/libmkl_rt.so" 50
-    update-alternatives --install /usr/lib/x86_64-linux-gnu/liblapack.so liblapack.so-x86_64-linux-gnu    "${MKLROOT}/lib/intel64/libmkl_rt.so" 50
-    update-alternatives --install /usr/lib/x86_64-linux-gnu/liblapack.so.3 liblapack.so.3-x86_64-linux-gnu  "${MKLROOT}/lib/intel64/libmkl_rt.so" 50
-    
-    # Update dynamic linker
-    echo "${ONEAPI_ROOT}/compiler/latest/linux/compiler/lib/intel64_lin" >> /etc/ld.so.conf.d/1-intel.conf
-    echo "${ONEAPI_ROOT}/compiler/latest/linux/lib" >> /etc/ld.so.conf.d/1-intel.conf
-    echo "${ONEAPI_ROOT}/compiler/latest/linux/lib/x64" >> /etc/ld.so.conf.d/1-intel.conf
-    echo "${MKLROOT}/lib/intel64" >> /etc/ld.so.conf.d/1-intel.conf
-    echo "${TBBROOT}/lib/intel64/gcc4.8" >> /etc/ld.so.conf.d/1-intel.conf
-
-    ldconfig
-
-    cd /opt/build/cmake-dir
-    fix_cmake_intel_openmp
-EOF
-
-# Install Eigen 3.4:
-WORKDIR /opt/build/eigen/src
-ADD --link https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz src.tar.gz
-SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
-RUN <<-EOF
-
-    source "/opt/build/compilervars.sh"
-
-    tar -xzf src.tar.gz --strip-components=1
-    cd ../
-
-    mkdir -p build && cd build
-    set_compiler_flags "${EIGEN_MKL_ALL_FLAGS}" ""
-    cmake -Wno-dev \
-            -D BUILD_TESTING:BOOL=OFF \
-            -D BUILD_DOCUMENTATION:BOOL=OFF \
-            -D BLA_VENDOR=Intel10_64lp \
-            -D EIGEN_CUDA_COMPUTE_ARCH="${CUDAARCHS:-}" \
-        ../src || { tail -v -n +0 CMakeFiles/*.log || true; exit 1; }
-    cmake --build .
-    cmake --install .
-EOF
-
-# Start build:
-FROM builder AS build-vtk
+FROM builder AS build-vtk-src
 WORKDIR /opt/build/vtk
-ARG MAMBA_DOCKERFILE_ACTIVATE=1
-ADD --keep-git-dir=true https://github.com/Kitware/VTK.git#832bea6a0490282cc16ed5392186bb498d503abd src
-ARG GCC_OPTFLAGS="-O3 -march=skylake -mtune=skylake -DEIGEN_USE_MKL_ALL"
-ARG NCPU
-SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
-RUN <<-EOF
+RUN git clone --branch release --depth=1 https://gitlab.kitware.com/vtk/vtk.git src && (cd src && git submodule update --init --remote --recommend-shallow ThirdParty/vtkm/vtkvtkm/vtk-m) && cp /opt/build/CMakeUserPresets.json src/
 
-    (cd src && git submodule update --init --recursive )
-    (cd src/ThirdParty/vtkm/vtkvtkm/vtk-m && git fetch origin release && git checkout 6eae30063 )
-
-    #patch src/ThirdParty/vtkm/vtkvtkm/vtk-m/vtkm/exec/cuda/internal/ExecutionPolicy.h <(printf '18a19\n> #include <thrust/sort.h>\n')
-
-    export INTEL_OPTIMIZER_IPO=""
-    export USE_INTEL_COMPILER=0
-    source "/opt/build/compilervars.sh"
-    mkdir -p build && cd build
-    #export INTEL_OPTIMIZER_IPO="-ipo-separate"
-    set_compiler_flags "" "-w2 -wd869 -wd593 -wd1286" "${INTEL_MKL_TBB_STATIC_FLAGS} -static-intel"
-    export CUDAHOSTCXX="$(which g++)"
-    export NVCC_CCBIN="${CUDAHOSTCXX}"
-    export CUDAFLAGS="-std=c++17"
-    gccNvccFlags="$(for x in ${GCC_OPTFLAGS:-}; do echo "-Xcompiler=$x"; done | paste -d' ' -s)"
-    export NVCC_APPEND_FLAGS="-Xcompiler=-DEIGEN_USE_MKL -Xcompiler=-DEIGEN_USE_MKL_ALL -Xcompiler=-std=c++17 -Xcompiler=-march=skylake -Xcompiler=-O3 -Xcompiler=-m64 -Xcompiler=-lstdc++ -Xcompiler=-mtune=skylake --forward-unknown-to-host-compiler --expt-relaxed-constexpr --extended-lambda --std c++17 --generate-code arch=compute_86,code=sm_86 --generate-code arch=compute_75,code=sm_75 --generate-code arch=compute_89,code=sm_89"
-
-    nice -n19 cmake -Wno-dev -GNinja \
+FROM build-vtk-src AS build-vtk
+WORKDIR /opt/build/vtk/build
+ENV NVCC_CCBIN=g++
+ENV CUDAHOSTCXX="${NVCC_CCBIN}"
+ARG NVCC_APPEND_FLAGS=-Xcompiler=-DEIGEN_USE_MKL_ALL -Xcompiler=-march=x86-64-v3 -Xcompiler=-O3
+ENV NVCC_APPEND_FLAGS="${NVCC_APPEND_FLAGS}"
+ARG USE_INTEL_OPTFLAGS=-DEIGEN_USE_MKL_ALL -qopt-zmm-usage=high -qmkl=parallel -O3 -xCORE-AVX2 -axSKYLAKE-AVX512
+ENV __INTEL_PRE_CFLAGS="${__INTEL_PRE_CFLAGS:-} ${USE_INTEL_OPTFLAGS}"
+RUN source "${ONEAPI_ROOT}/setvars.sh" && \
+	printenv && \
+    cmake --preset intel-llvm \
             -D CMAKE_CXX_STANDARD=17 \
             -D BUILD_SHARED_LIBS:BOOL=ON \
             -D BUILD_TESTING:BOOL=OFF \
             -D VTK_ENABLE_REMOTE_MODULES:BOOL=OFF \
-            -D VTK_ENABLE_WRAPPING=ON \
+            -D VTK_ENABLE_WRAPPING:BOOL=ON \
             -D VTK_GROUP_ENABLE_Qt:STRING=DONT_WANT \
             -D VTK_GROUP_ENABLE_Rendering:STRING=DONT_WANT \
             -D VTK_GROUP_ENABLE_StandAlone:STRING=DONT_WANT \
@@ -339,45 +302,61 @@ RUN <<-EOF
             -D VTK_MODULE_ENABLE_VTK_RenderingOpenVR:STRING=DONT_WANT \
             -D VTK_MODULE_ENABLE_VTK_WrappingTools:STRING=DONT_WANT \
             -D VTK_MODULE_USE_EXTERNAL_VTK_eigen:BOOL=ON \
-            -D VTK_MODULE_USE_EXTERNAL_VTK_expat:BOOL=ON \
-            -D VTK_MODULE_USE_EXTERNAL_VTK_jpeg:BOOL=ON \
-            -D VTK_MODULE_USE_EXTERNAL_VTK_libxml2:BOOL=ON \
-            -D VTK_MODULE_USE_EXTERNAL_VTK_lz4:BOOL=OFF \
-            -D VTK_MODULE_USE_EXTERNAL_VTK_png:BOOL=ON \
-            -D VTK_MODULE_USE_EXTERNAL_VTK_tiff:BOOL=OFF \
-            -D VTK_MODULE_USE_EXTERNAL_VTK_zlib:BOOL=OFF \
             -D VTK_SMP_ENABLE_TBB:BOOL=ON \
-            -D VTK_SMP_IMPLEMENTATION_TYPE=TBB \
+            -D VTK_SMP_IMPLEMENTATION_TYPE:STRING=TBB \
             -D VTK_USE_CUDA:BOOL=ON \
             -D VTK_USE_X:BOOL=OFF \
             -D VTK_WRAP_PYTHON:BOOL=ON \
+            -D VTK_WRAP_JAVA:BOOL=OFF \
+            -D VTK_ENABLE_VTKM_OVERRIDES:BOOL=ON \
             -D VTKm_ENABLE_CUDA:BOOL=ON \
             -D VTKm_ENABLE_DEVELOPER_FLAGS:BOOL=OFF \
             -D VTKm_ENABLE_RENDERING:BOOL=OFF \
             -D VTKm_ENABLE_TESTING:BOOL=OFF \
             -D VTKm_ENABLE_TBB:BOOL=ON \
-            ../src || { tail -v -n 50 CMakeFiles/*.log 2>/dev/null || true; exit 1; }
-    cmake --build . -- -j "${NCPU}" -k 1 -l "${NCPU}"
-    cmake --install .
-EOF
+            -D VTKm_ENABLE_MPI:BOOL=OFF \
+            ../src
+
+ARG VTKM_NCPU=1
+RUN . "${ONEAPI_ROOT}/setvars.sh" && \
+	/usr/bin/time -v cmake --build . -t ThirdParty/vtkm/all -- -j ${VTKM_NCPU} || { tail -v -n 50 CMakeFiles/*.log 2>/dev/null || true; exit 1; }
+
+RUN . "${ONEAPI_ROOT}/setvars.sh" && \
+	/usr/bin/time -v cmake --build . -- -j ${NCPU:-$(nproc)} || { tail -v -n 50 CMakeFiles/*.log 2>/dev/null || true; exit 1; }
+
+RUN cmake --install .
 
 FROM build-vtk AS build-itk
-ARG MAMBA_DOCKERFILE_ACTIVATE=1
 WORKDIR /opt/build/itk
 ADD --keep-git-dir=true https://github.com/InsightSoftwareConsortium/ITK.git#v5.4rc04 src
-SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
-RUN <<-EOF
+RUN sed -nE 's/icpc/icpx/g; s/icc/icx/g' src/CMake/ITKSetStandardCompilerFlags.cmake
 
-    
-    source "/opt/build/compilervars.sh"
-    fix_cmake_intel_openmp
-    mkdir -p build && cd build
+RUN cp /opt/build/CMakeUserPresets.json src/
+#RUN cd src/Modules/ThirdParty/VNL && rm -rf vxl && git clone --depth=1 https://github.com/vxl/vxl vxl
 
-    cp -v --no-clobber /opt/build/eigen/src/cmake/FindEigen3.cmake /opt/build/cmake-dir/Modules/
-
-    export INTEL_OPTIMIZER_IPO="-ipo-separate"
-    set_compiler_flags "" "-w2 -wd869 -wd593 -wd1286" "${INTEL_MKL_TBB_STATIC_FLAGS} -static-intel -qoverride-limits"
-    cmake -Wno-dev -GNinja \
+RUN echo "" > src/CMake/ITKSetStandardCompilerFlags.cmake
+WORKDIR /opt/build/itk/build
+RUN cp -v --no-clobber /opt/build/eigen/src/cmake/FindEigen3.cmake /opt/build/cmake-dir/Modules/
+ARG __INTEL_PRE_CFLAGS=-fp-model=precise -diag-disable=10441 -diag-disable=15009 -diag-disable=10006 -diag-disable=10370 -diag-disable=10148 -diag-disable=10145 -wd10145 -qmkl -qtbb
+ARG __INTEL_POST_CFLAGS=-xCORE-AVX2 -axSKYLAKE-AVX512 -std=c++17
+ENV __INTEL_PRE_CFLAGS="${__INTEL_PRE_CFLAGS}"
+ENV __INTEL_POST_CFLAGS="${__INTEL_POST_CFLAGS}"
+RUN source "${ONEAPI_ROOT}/setvars.sh" && \
+    cmake --preset intel-classic \
+            -D CMAKE_CXX_STANDARD=17 \
+            -D CMAKE_CXX_EXTENSIONS:BOOL=OFF \
+            -D BUILD_DOCUMENTATION:BOOL=OFF \
+            -D BUILD_EXAMPLES:BOOL=OFF \
+            -D BUILD_SHARED_LIBS:BOOL=ON \
+            -D BUILD_TESTING:BOOL=OFF \
+            -D EIGEN_USE_MKL:BOOL=ON \
+            -D EIGEN_USE_MKL_ALL:BOOL=ON \
+            -D CMAKE_CXX_VISIBILITY_PRESET="default" \
+            -D ITK_BUILD_DEFAULT_MODULES:BOOL=OFF \
+            -D ITK_C_WARNING_FLAGS="-Wno-uninitialized -Wno-unused-parameter -wd1268 -wd981 -wd383 -wd1418 -wd1419 -wd2259 -wd1572 -wd424 -Wno-long-double -Wcast-align -Wdisabled-optimization -Wextra -Wformat=2 -Winvalid-pch -Wno-format-nonliteral -Wpointer-arith -Wshadow -Wunused -Wwrite-strings -Wno-strict-overflow" \
+            -D ITK_CXX_WARNING_FLAGS="-wd1268 -wd981 -wd383 -wd1418 -wd1419 -wd2259 -wd1572 -wd424  -Wno-long-double -Wcast-align -Wdisabled-optimization -Wextra -Wformat=2 -Winvalid-pch -Wno-format-nonliteral -Wpointer-arith -Wshadow -Wunused -Wwrite-strings -Wno-strict-overflow -Wno-deprecated -Wno-invalid-offsetof -Wno-undefined-var-template -Woverloaded-virtual -Wctad-maybe-unsupported -Wstrict-null-sentinel" \
+            -D CMAKE_BUILD_TYPE=Release \
+            -D CMAKE_CXX_STANDARD=17 \
             -D BUILD_DOCUMENTATION:BOOL=OFF \
             -D BUILD_EXAMPLES:BOOL=OFF \
             -D BUILD_SHARED_LIBS:BOOL=ON \
@@ -385,21 +364,15 @@ RUN <<-EOF
             -D CMAKE_CXX_VISIBILITY_PRESET="default" \
             -D ITK_USE_KWSTYLE=OFF \
             -D ITK_BUILD_DEFAULT_MODULES:BOOL=OFF \
-            -D ITK_C_WARNING_FLAGS="-Wno-uninitialized -Wno-unused-parameter -wd1268 -wd981 -wd383 -wd1418 -wd1419 -wd2259 -wd1572 -wd424 -Wno-long-double -Wcast-align -Wdisabled-optimization -Wextra -Wformat=2 -Winvalid-pch -Wno-format-nonliteral -Wpointer-arith -Wshadow -Wunused -Wwrite-strings -Wno-strict-overflow" \
-            -D ITK_CXX_WARNING_FLAGS="-wd1268 -wd981 -wd383 -wd1418 -wd1419 -wd2259 -wd1572 -wd424  -Wno-long-double -Wcast-align -Wdisabled-optimization -Wextra -Wformat=2 -Winvalid-pch -Wno-format-nonliteral -Wpointer-arith -Wshadow -Wunused -Wwrite-strings -Wno-strict-overflow -Wno-deprecated -Wno-invalid-offsetof -Wno-undefined-var-template -Woverloaded-virtual -Wctad-maybe-unsupported -Wstrict-null-sentinel" \
-            -D ITK_TEMPLATE_VISIBILITY_DEFAULT:BOOL=ON \
             -D ITK_USE_MKL:BOOL=ON \
             -D ITK_USE_GPU:BOOL=ON \
-            -D ITK_USE_SYSTEM_DCMTK:BOOL=ON \
             -D ITK_USE_SYSTEM_EIGEN:BOOL=ON \
             -D ITK_USE_SYSTEM_EXPAT:BOOL=ON \
-            -D ITK_USE_SYSTEM_FFTW:BOOL=ON \
             -D ITK_USE_SYSTEM_HDF5:BOOL=ON \
             -D ITK_USE_SYSTEM_JPEG:BOOL=ON \
             -D ITK_USE_SYSTEM_MINC:BOOL=OFF \
             -D ITK_USE_SYSTEM_PNG:BOOL=ON \
             -D ITK_USE_SYSTEM_TIFF:BOOL=ON \
-            -D ITK_USE_SYSTEM_ZLIB:BOOL=ON \
             -D ITK_USE_TBB:BOOL=ON \
             -D ITK_USE_TBB_WITH_MKL:BOOL=ON \
             -D ITKGroup_Core:BOOL=ON \
@@ -433,10 +406,12 @@ RUN <<-EOF
             -D Module_ITKTestKernel:BOOL=OFF \
             -D Module_ITKThresholding:BOOL=ON \
             -D Module_ITKTransform:BOOL=ON \
-        ../src || { tail -v -n +0 CMakeFiles/*.log || true; exit 1; }
-    cmake --build . -- -k 1 -l ${NCPU}
-    cmake --install .
-EOF
+        ../src
+
+RUN . "${ONEAPI_ROOT}/setvars.sh" && \
+    /usr/bin/time -v cmake --build . -- -j ${NCPU:-$(nproc)} || { tail -v -n 50 CMakeFiles/*.log 2>/dev/null || true; exit 1; }
+
+RUN cmake --install .
 
 FROM build-itk AS build-mirtk
 ARG MAMBA_DOCKERFILE_ACTIVATE=1
@@ -603,7 +578,22 @@ RUN <<-EOF
 EOF
 
 
-FROM build-sphericalmesh AS build-pipeline-applications
+# Install FSL:
+FROM build-sphericalmesh AS build-fsl
+
+SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
+RUN \
+    <<-EOF
+
+    # Set up micromamba and install FSL:
+    export CI=1
+    micromamba install --dry-run --yes --verbose -n base --channel intel --channel https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public --channel conda-forge fsl-avwutils==2209.0 fsl-flirt==2111.0 fsl-bet2==2111.0
+    exit 1
+    micromamba clean --yes --all
+
+EOF
+
+FROM build-fsl  AS build-pipeline-applications
 ARG MAMBA_DOCKERFILE_ACTIVATE=1
 WORKDIR "/opt/build/pipeline-applications"
 COPY src/applications /opt/build/pipeline-applications/src
@@ -641,6 +631,10 @@ EOF
 FROM base AS final
 ARG MAMBA_DOCKERFILE_ACTIVATE=1
 ENV ITK_GLOBAL_DEFAULT_THREADER=tbb
+ENV DHCP_DIR="${DHCP_PREFIX}/src"
+ENV DRAWEMDIR="${DHCP_PREFIX}/share/DrawEM"
+ENV FSLDIR="${CONDA_PREFIX}"
+ENV ENV_NAME="${FSLDIR}"
 WORKDIR /
 COPY --from=build-pipeline "${DHCP_PREFIX}" "${DHCP_PREFIX}"
 COPY --chmod=755 --from=build-pipeline /opt/build/mirtk/build/lib/mirtk/tools/N4  "${DHCP_PREFIX}/lib/mirtk/tools/N4"
