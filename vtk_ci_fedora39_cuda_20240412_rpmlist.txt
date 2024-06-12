@@ -1,0 +1,541 @@
+libgcc.x86_64: GCC version 13 shared support library
+tzdata.noarch: Timezone data
+fedora-release-identity-container.noarch: Package providing the identity for Fedora Container Base Image
+fedora-gpg-keys.noarch: Fedora RPM keys
+fedora-repos.noarch: Fedora package repositories
+fedora-release-common.noarch: Fedora release files
+fedora-release-container.noarch: Base package for Fedora container specific default configurations
+setup.noarch: A set of system configuration and setup files
+filesystem.x86_64: The basic directory layout for a Linux system
+basesystem.noarch: The skeleton package which defines a simple Fedora system
+vim-data.noarch: Shared data for Vi and Vim
+publicsuffix-list-dafsa.noarch: Cross-vendor public domain suffix database in DAFSA form
+pcre2-syntax.noarch: Documentation for PCRE2 regular expressions
+ncurses-base.noarch: Descriptions of common terminals
+ncurses-libs.x86_64: Ncurses libraries
+bash.x86_64: The GNU Bourne Again shell
+zlib.x86_64: Compression and decompression library
+bzip2-libs.x86_64: Libraries for applications using bzip2
+libzstd.x86_64: Zstd shared library
+xz-libs.x86_64: Libraries for decoding LZMA compression
+gmp.x86_64: GNU arbitrary precision library
+libuuid.x86_64: Universally unique ID library
+libxml2.x86_64: Library providing XML and HTML support
+sqlite-libs.x86_64: Shared library for the sqlite3 embeddable SQL database engine.
+libcap.x86_64: Library for getting and setting POSIX.1e capabilities
+libgpg-error.x86_64: Library for error values used by GnuPG components
+libxcrypt.x86_64: Extended crypt library for descrypt, md5crypt, bcrypt, and others
+popt.x86_64: C library for parsing command line parameters
+libattr.x86_64: Dynamic library for extended attribute support
+libacl.x86_64: Dynamic library for access control list support
+libeconf.x86_64: Enhanced config file parser library
+libffi.x86_64: A portable foreign function interface library
+libsmartcols.x86_64: Formatting library for ls-like programs
+libtasn1.x86_64: The ASN.1 library used in GNUTLS
+p11-kit.x86_64: Library for loading and sharing PKCS#11 modules
+libunistring.x86_64: GNU Unicode string library
+libidn2.x86_64: Library to support IDNA2008 internationalized domain names
+pcre2.x86_64: Perl-compatible regular expression library
+readline.x86_64: A library for editing typed command lines
+libblkid.x86_64: Block device ID library
+expat.x86_64: An XML parser library
+gdbm-libs.x86_64: Libraries files for gdbm
+json-c.x86_64: JSON implementation in C
+keyutils-libs.x86_64: Key utilities library
+libcom_err.x86_64: Common error description library
+libsepol.x86_64: SELinux binary policy manipulation library
+libselinux.x86_64: SELinux library and simple utilities
+sed.x86_64: A GNU stream text editor
+libmount.x86_64: Device mounting library
+lua-libs.x86_64: Libraries for lua
+lz4-libs.x86_64: Libaries for lz4
+libb2.x86_64: C library providing BLAKE2b, BLAKE2s, BLAKE2bp, BLAKE2sp
+systemd-libs.x86_64: systemd libraries
+findutils.x86_64: The GNU versions of find utilities (find and xargs)
+cyrus-sasl-lib.x86_64: Shared libraries needed by applications which use Cyrus SASL
+libcomps.x86_64: Comps XML file manipulation library
+grep.x86_64: Pattern matching utilities
+libpsl.x86_64: C library for the Publix Suffix List
+libassuan.x86_64: GnuPG IPC library
+libgcrypt.x86_64: A general-purpose cryptography library
+libksba.x86_64: CMS and X.509 library
+mpfr.x86_64: C library for multiple-precision floating-point computations
+nettle.x86_64: A low-level cryptographic library
+file-libs.x86_64: Libraries for applications using libmagic
+alternatives.x86_64: A tool to maintain symbolic links determining default commands
+p11-kit-trust.x86_64: System trust module from p11-kit
+gnutls.x86_64: A TLS protocol implementation
+libbrotli.x86_64: Library for brotli lossless compression algorithm
+libcap-ng.x86_64: Alternate posix capabilities library
+audit-libs.x86_64: Dynamic library for libaudit
+pam-libs.x86_64: Shared libraries of the PAM package
+libsemanage.x86_64: SELinux binary policy manipulation library
+shadow-utils.x86_64: Utilities for managing accounts and shadow password files
+libdb.x86_64: The Berkeley DB database library for C
+libsigsegv.x86_64: Library for handling page faults in user mode
+gawk.x86_64: The GNU version of the AWK text processing utility
+libverto.x86_64: Main loop abstraction library
+libyaml.x86_64: YAML 1.1 parser and emitter written in C
+mpdecimal.x86_64: Library for general decimal arithmetic
+npth.x86_64: The New GNU Portable Threads library
+libnghttp2.x86_64: A library implementing the HTTP/2 protocol
+elfutils-default-yama-scope.noarch: Default yama attach scope sysctl setting
+libssh-config.noarch: Configuration files for libssh
+libreport-filesystem.noarch: Filesystem layout for libreport
+coreutils-common.x86_64: coreutils common optional components
+openssl-libs.x86_64: A general purpose cryptography library with TLS implementation
+coreutils.x86_64: A set of basic GNU tools commonly used in shell scripts
+ca-certificates.noarch: The Mozilla CA root certificate bundle
+krb5-libs.x86_64: The non-admin shared libraries used by Kerberos 5
+libtirpc.x86_64: Transport Independent RPC Library
+libnsl2.x86_64: Public client interface library for NIS(YP) and NIS+
+zchunk-libs.x86_64: Zchunk library
+libssh.x86_64: A library implementing the SSH protocol
+python-pip-wheel.noarch: The pip wheel
+python3.x86_64: Python 3.12 interpreter
+python3-libs.x86_64: Python runtime libraries
+python3-libcomps.x86_64: Python 3 bindings for libcomps library
+authselect-libs.x86_64: Utility library used by the authselect tool
+authselect.x86_64: Configures authentication and identity sources from supported profiles
+gzip.x86_64: GNU data compression program
+cracklib.x86_64: A password-checking library
+libpwquality.x86_64: A library for password generation and password quality checking
+pam.x86_64: An extensible library which provides authentication for applications
+libarchive.x86_64: A library for handling streaming archive formats
+libevent.x86_64: Abstract asynchronous event notification library
+openldap.x86_64: LDAP support libraries
+libcurl.x86_64: A library for getting files from web servers
+tpm2-tss.x86_64: TPM2.0 Software Stack
+ima-evm-utils.x86_64: IMA/EVM support utilities
+gnupg2.x86_64: Utility for secure communication and data storage
+curl.x86_64: A utility for getting files from remote servers (FTP, HTTP, and others)
+libfsverity.x86_64: Development package for fsverity-utils
+rpm-sequoia.x86_64: Implementation of the RPM PGP interface using Sequoia
+rpm-libs.x86_64: Libraries for manipulating RPM packages
+libmodulemd.x86_64: Module metadata manipulation library
+libsolv.x86_64: Package dependency solver
+librepo.x86_64: Repodata downloading library
+rpm-build-libs.x86_64: Libraries for building RPM packages
+rpm-sign-libs.x86_64: Libraries for signing RPM packages
+python3-rpm.x86_64: Python 3 bindings for apps which will manipulate RPM packages
+rpm.x86_64: The RPM package management system
+sudo.x86_64: Allows restricted root access for specified users
+util-linux-core.x86_64: The most essential utilities from the util-linux suite
+tar.x86_64: GNU file archiving program
+vim-minimal.x86_64: A minimal version of the VIM editor
+rootfiles.noarch: The basic required files for the root user's directory
+gpg-pubkey.(none): Fedora (39) <fedora-39-primary@fedoraproject.org> public key
+libutempter.x86_64: A privileged helper for utmp/wtmp updates
+libfdisk.x86_64: Partitioning library for fdisk-like programs
+util-linux.x86_64: Collection of basic system utilities
+openssh.x86_64: An open source implementation of SSH protocol version 2
+libedit.x86_64: The NetBSD Editline library
+libcbor.x86_64: A CBOR parsing library
+libfido2.x86_64: FIDO2 library
+openssh-clients.x86_64: An open source SSH client applications
+less.x86_64: A text file browser similar to more, but better
+git-core.x86_64: Core package of git with minimal functionality
+ed.x86_64: The GNU line editor
+patch.x86_64: Utility for modifying/upgrading files
+git-lfs.x86_64: Git extension for versioning large files
+bzip2.x86_64: File compression utility
+vim-filesystem.noarch: VIM filesystem layout
+emacs-filesystem.noarch: Emacs filesystem layout
+ninja-build.x86_64: Small build system with a focus on speed
+glibc-common.x86_64: Common binaries and locale data for glibc
+glibc-minimal-langpack.x86_64: Minimal language packs for glibc.
+glibc.x86_64: The GNU libc libraries
+glibc-gconv-extra.x86_64: All iconv converter modules for glibc.
+elfutils-libelf.x86_64: Library to read and write ELF files
+hwloc-libs.x86_64: Run time libraries for the hwloc
+libgfortran.x86_64: Fortran runtime
+libmpc.x86_64: C library for multiple precision complex arithmetic
+libquadmath.x86_64: GCC __float128 shared support library
+numactl-libs.x86_64: libnuma libraries
+libnl3.x86_64: Convenience library for kernel netlink sockets
+libibverbs.x86_64: A library and drivers for direct userspace use of RDMA (InfiniBand/iWARP/RoCE) hardware
+librdmacm.x86_64: Userspace RDMA Connection Manager
+libpsm2.x86_64: Intel PSM Libraries
+libfabric.x86_64: Open Fabric Interfaces
+elfutils-libs.x86_64: Libraries to handle compiled objects
+elfutils-debuginfod-client.x86_64: Library and command line client for build-id HTTP ELF/DWARF server
+libgomp.x86_64: GCC OpenMP v4.5 shared support library
+jansson.x86_64: C library for encoding, decoding and manipulating JSON data
+binutils.x86_64: A GNU collection of binary utilities
+binutils-gold.x86_64: The GOLD linker, a faster alternative to the BFD linker
+kmod-libs.x86_64: Libraries to handle kernel module loading and unloading
+lua.x86_64: Powerful light-weight programming language
+lua-term.x86_64: Terminal functions for Lua
+ucx.x86_64: UCX is a communication library implementing high-performance messaging
+cpp.x86_64: The C Preprocessor
+dwz.x86_64: DWARF optimization and duplicate removal tool
+file.x86_64: Utility for determining file types
+gc.x86_64: Garbage collector for C and C++
+kmod.x86_64: Linux kernel module management utilities
+libargon2.x86_64: The password-hashing library
+libibumad.x86_64: OpenFabrics Alliance InfiniBand umad (userspace management datagram) library
+opensm-libs.x86_64: Libraries used by opensm and included utilities
+libpkgconf.x86_64: Backend library for pkgconf
+pkgconf.x86_64: Package compiler and linker metadata toolkit
+libseccomp.x86_64: Enhanced seccomp library
+libtool-ltdl.x86_64: Runtime libraries for GNU Libtool Dynamic Module Loader
+guile22.x86_64: A GNU implementation of Scheme for application extensibility
+make.x86_64: A GNU tool which simplifies the build process for users
+lua-filesystem.x86_64: File System Library for the Lua Programming Language
+lua-lpeg.x86_64: Parsing Expression Grammars for Lua
+lua-json.noarch: JSON Parser/Constructor for Lua
+lua-posix.x86_64: POSIX library for Lua
+ncurses.x86_64: Ncurses support utilities
+tcl.x86_64: Tool Command Language, pronounced tickle
+tcsh.x86_64: An enhanced version of csh, the C shell
+orangefs.x86_64: Parallel network file system client
+unzip.x86_64: A utility for unpacking zip files
+zip.x86_64: A file compression and packaging utility compatible with PKZIP
+yaksa.x86_64: High-performance library for noncontiguous data
+glibc-headers-x86.noarch: Additional internal header files for glibc-devel.
+groff-base.x86_64: Parts of the groff formatting system required to display manual pages
+perl-Digest.noarch: Modules that calculate message digests
+perl-Digest-MD5.x86_64: Perl interface to the MD5 algorithm
+perl-B.x86_64: Perl compiler backend
+perl-FileHandle.noarch: Object methods for file handles
+perl-Data-Dumper.x86_64: Stringify perl data structures, suitable for printing and eval
+perl-libnet.noarch: Perl clients for various network protocols
+perl-AutoLoader.noarch: Load subroutines only on demand
+perl-base.noarch: Establish an ISA relationship with base classes at compile time
+perl-URI.noarch: A Perl module implementing URI parsing and manipulation
+perl-Text-Tabs+Wrap.noarch: Expand tabs and do simple line wrapping
+perl-Time-Local.noarch: Efficiently compute time from local and GMT time
+perl-Mozilla-CA.noarch: Mozilla's CA certificate bundle in PEM format
+perl-if.noarch: Use a Perl module if a condition holds
+perl-locale.noarch: Pragma to use or avoid POSIX locales for built-in operations
+perl-IO-Socket-IP.noarch: Drop-in replacement for IO::Socket::INET supporting both IPv4 and IPv6
+perl-File-Path.noarch: Create or remove directory trees
+perl-IO-Socket-SSL.noarch: Perl library for transparent SSL
+perl-Net-SSLeay.x86_64: Perl extension for using OpenSSL
+perl-Pod-Escapes.noarch: Resolve POD escape sequences
+perl-Term-ANSIColor.noarch: Color screen output using ANSI escape sequences
+perl-Class-Struct.noarch: Declare struct-like data types as Perl classes
+perl-POSIX.x86_64: Perl interface to IEEE Std 1003.1
+perl-IPC-Open3.noarch: Open a process for reading, writing, and error handling
+perl-File-Temp.noarch: Return name and handle of a temporary file safely
+perl-HTTP-Tiny.noarch: Small, simple, correct HTTP/1.1 client
+perl-Pod-Simple.noarch: Framework for parsing POD documentation
+perl-Term-Cap.noarch: Perl termcap interface
+perl-Socket.x86_64: Networking constants and support functions
+perl-SelectSaver.noarch: Save and restore selected file handle
+perl-Symbol.noarch: Manipulate Perl symbols and their names
+perl-File-stat.noarch: By-name interface to Perl built-in stat functions
+perl-Pod-Perldoc.noarch: Look up Perl documentation in Pod format
+perl-podlators.noarch: Format POD source into various output formats
+perl-Text-ParseWords.noarch: Parse text into an array of tokens or array of arrays
+perl-Fcntl.x86_64: File operation options
+perl-mro.x86_64: Method resolution order
+perl-IO.x86_64: Perl input/output modules
+perl-overloading.noarch: Perl pragma to lexically control overloading
+perl-Pod-Usage.noarch: Print a usage message from embedded POD documentation
+perl-MIME-Base64.x86_64: Encoding and decoding of Base64 and quoted-printable strings
+perl-Scalar-List-Utils.x86_64: A selection of general-utility scalar and list subroutines
+perl-constant.noarch: Perl pragma to declare constants
+perl-parent.noarch: Establish an ISA relationship with base classes at compile time
+perl-Errno.x86_64: System errno constants
+perl-File-Basename.noarch: Parse file paths into directory, file name, and suffix
+perl-Getopt-Std.noarch: Process single-character switches with switch clustering
+perl-Storable.x86_64: Persistence for Perl data structures
+perl-overload.noarch: Overloading Perl operations
+perl-vars.noarch: Perl pragma to predeclare global variable names
+perl-Getopt-Long.noarch: Extended processing of command line options
+perl-Carp.noarch: Alternative warn and die for modules
+perl-Exporter.noarch: Implements default import method for modules
+perl-PathTools.x86_64: PathTools Perl module (Cwd, File::Spec)
+perl-DynaLoader.x86_64: Dynamically load C libraries into Perl code
+perl-Encode.x86_64: Character encodings in Perl
+perl-libs.x86_64: The libraries for the perl run-time
+perl-interpreter.x86_64: Standalone executable Perl interpreter
+munge-libs.x86_64: Runtime libs for uid * gid authentication across a host cluster
+pmix.x86_64: Process Management Interface Exascale (PMIx)
+procps-ng.x86_64: System and process monitoring utilities
+Lmod.x86_64: Environmental Modules System in Lua
+rpm-mpi-hooks.noarch: RPM dependency generator hooks for MPI packages
+mpich.x86_64: A high-performance implementation of MPI
+rust-srpm-macros.noarch: RPM macros for building Rust projects
+rpmautospec-rpm-macros.noarch: Rpmautospec RPM macros for local rpmbuild
+qt6-srpm-macros.noarch: RPM macros for source Qt6 packages
+qt5-srpm-macros.noarch: RPM macros for source Qt5 packages
+pyproject-srpm-macros.noarch: Minimal implementation of %pyproject_buildrequires
+lua-srpm-macros.noarch: RPM macros for building Lua source packages
+kernel-headers.x86_64: Header files for the Linux kernel for use by glibc
+ansible-srpm-macros.noarch: SRPM stage RPM packaging macros for Ansible collections
+annobin-docs.noarch: Documentation and shell scripts for use with annobin
+pkgconf-m4.noarch: m4 macros for pkgconf
+pkgconf-pkg-config.x86_64: pkgconf shim to provide /usr/bin/pkg-config
+glibc-devel.x86_64: Object files for development using standard C libraries.
+libxcrypt-devel.x86_64: Development files for libxcrypt
+gcc.x86_64: Various compilers (C, C++, Objective-C, ...)
+gcc-plugin-annobin.x86_64: The annobin plugin for gcc, built by the installed version of gcc
+libquadmath-devel.x86_64: GCC __float128 support
+gcc-gfortran.x86_64: Fortran support
+annobin-plugin-gcc.x86_64: annobin gcc plugin
+perl-srpm-macros.noarch: RPM macros for building Perl source package from source repository
+package-notes-srpm-macros.noarch: Generate LDFLAGS to insert .note.package section
+openblas-srpm-macros.noarch: OpenBLAS architecture macros
+ocaml-srpm-macros.noarch: OCaml architecture macros
+kernel-srpm-macros.noarch: RPM macros that list arches the full kernel is built on
+kbd-misc.noarch: Data for kbd package
+kbd-legacy.noarch: Legacy data for kbd package
+kbd.x86_64: Tools for configuring the console (keyboard, virtual terminals, etc.)
+gnat-srpm-macros.noarch: RPM macros needed when source packages that need GNAT are built
+ghc-srpm-macros.noarch: RPM macros for building Haskell source packages
+fpc-srpm-macros.noarch: RPM macros needed by packages built with Free Pascal Compiler
+efi-srpm-macros.noarch: Common SRPM Macros for building EFI-related packages
+fonts-srpm-macros.noarch: Source-stage rpm automation for fonts packages
+python-srpm-macros.noarch: RPM macros for building Python source packages
+forge-srpm-macros.noarch: Macros to simplify packaging of forge-hosted projects
+go-srpm-macros.noarch: Source-stage rpm automation for Go packages
+redhat-rpm-config.noarch: Red Hat specific rpm configuration files
+dbus-common.noarch: D-BUS message bus configuration
+dbus-broker.x86_64: Linux D-Bus Message Broker
+dbus.x86_64: D-BUS message bus
+systemd-pam.x86_64: systemd PAM module
+device-mapper-libs.x86_64: Device-mapper shared library
+cryptsetup-libs.x86_64: Cryptsetup shared library
+systemd.x86_64: System and Service Manager
+device-mapper.x86_64: Device mapper utility
+systemd-udev.x86_64: Rule-based device node and kernel event manager
+infinipath-psm.x86_64: Intel Performance Scaled Messaging (PSM) Libraries
+openmpi.x86_64: Open Message Passing Interface
+openmpi-devel.x86_64: Development files for openmpi
+mpich-devel.x86_64: Development files for mpich
+xorg-x11-proto-devel.noarch: X.Org X11 Protocol headers
+libglvnd.x86_64: The GL Vendor-Neutral Dispatch library
+zlib-devel.x86_64: Header files and libraries for Zlib development
+libpng.x86_64: A library of functions for manipulating PNG image format files
+libXau.x86_64: Sample Authorization Protocol for X
+libxcb.x86_64: A C binding to the X11 protocol
+libICE.x86_64: X.Org X11 ICE runtime library
+libSM.x86_64: X.Org X11 SM runtime library
+glib2.x86_64: A library of handy utility functions
+libX11-xcb.x86_64: XCB interop for libX11
+fonts-filesystem.noarch: Directories used by font packages
+libICE-devel.x86_64: X.Org X11 ICE development package
+libXau-devel.x86_64: Development files for libXau
+libpng-devel.x86_64: Development tools for programs to manipulate PNG image format files
+libglvnd-opengl.x86_64: OpenGL support for libglvnd
+llvm-libs.x86_64: LLVM shared libraries
+libxshmfence.x86_64: X11 shared memory fences
+libwayland-server.x86_64: Wayland server library
+libjpeg-turbo.x86_64: A MMX/SSE2/SIMD accelerated library for manipulating JPEG image files
+libicu.x86_64: International Components for Unicode - libraries
+graphite2.x86_64: Font rendering capabilities for complex non-Roman writing systems
+gl-manpages.noarch: OpenGL manpages
+gettext-libs.x86_64: Libraries for gettext
+cmake-filesystem.x86_64: Directories used by CMake modules
+libjpeg-turbo-devel.x86_64: Headers for the libjpeg-turbo library
+graphite2-devel.x86_64: Files for developing with graphite2
+libicu-devel.x86_64: Development files for International Components for Unicode
+mesa-libGLU.x86_64: Mesa libGLU library
+libxcb-devel.x86_64: Development files for libxcb
+libSM-devel.x86_64: X.Org X11 SM development package
+abattis-cantarell-vf-fonts.noarch: Humanist sans serif font (variable)
+sysprof-capture-devel.x86_64: Development files for sysprof-capture static library
+mesa-filesystem.x86_64: Mesa driver filesystem
+hwdata.noarch: Hardware identification and configuration data
+libpciaccess.x86_64: PCI access library
+libdrm.x86_64: Direct Rendering Manager runtime library
+libpciaccess-devel.x86_64: PCI access library development package
+libdrm-devel.x86_64: Direct Rendering Manager development package
+google-noto-fonts-common.noarch: Common files for Noto fonts
+google-noto-sans-vf-fonts.noarch: Noto Sans variable font
+default-fonts-core-sans.noarch: Metapackage to install default sans-serif fonts for Western characters
+xz-devel.x86_64: Devel libraries & headers for liblzma
+libxml2-devel.x86_64: Libraries, includes, etc. to develop XML and HTML applications
+xorg-x11-xbitmaps.noarch: X.Org X11 application bitmaps
+xml-common.noarch: Common XML catalog and DTD files
+python3-setuptools.noarch: Easily build and distribute Python 3 packages
+pixman.x86_64: Pixel manipulation library
+pcre2-utf32.x86_64: UTF-32 variant of PCRE2
+pcre2-utf16.x86_64: UTF-16 variant of PCRE2
+pcre2-devel.x86_64: Development files for pcre2
+lm_sensors-libs.x86_64: Lm_sensors core libraries
+mesa-libglapi.x86_64: Mesa shared glapi
+mesa-dri-drivers.x86_64: Mesa-based DRI drivers
+mesa-libgbm.x86_64: Mesa gbm runtime library
+mesa-libOSMesa.x86_64: Mesa offscreen rendering libraries
+libwayland-client.x86_64: Wayland client library
+libglvnd-egl.x86_64: EGL support for libglvnd
+mesa-libEGL.x86_64: Mesa libEGL runtime libraries
+libglvnd-gles.x86_64: GLES support for libglvnd
+libsepol-devel.x86_64: Header files and libraries used to build policy manipulation tools
+libselinux-devel.x86_64: Header files and libraries used to build SELinux
+libglvnd-core-devel.x86_64: Core development files for libglvnd
+libffi-devel.x86_64: Development files for libffi
+libblkid-devel.x86_64: Block device ID library
+libmount-devel.x86_64: Device mounting library
+glib2-devel.x86_64: A library of handy utility functions
+libX11-common.noarch: Common data for libX11
+libX11.x86_64: Core X11 protocol client library
+libXext.x86_64: X.Org X11 libXext runtime library
+libX11-devel.x86_64: Development files for libX11
+libXt.x86_64: X.Org X11 libXt runtime library
+libXmu.x86_64: X.Org X11 libXmu/libXmuu runtime libraries
+libXrender.x86_64: X.Org X11 libXrender runtime library
+libXt-devel.x86_64: X.Org X11 libXt development package
+libXext-devel.x86_64: X.Org X11 libXext development package
+cairo.x86_64: A 2D graphics library
+harfbuzz.x86_64: Text shaping library
+freetype.x86_64: A free and portable font rendering engine
+fontconfig.x86_64: Font configuration and customization library
+libXft.x86_64: X.Org X11 libXft runtime library
+libXp.x86_64: X.Org X11 libXp runtime library
+libXp-devel.x86_64: X.Org X11 libXp development package
+harfbuzz-icu.x86_64: Harfbuzz ICU support library
+libXmu-devel.x86_64: X.Org X11 libXmu development package
+libXrender-devel.x86_64: X.Org X11 libXrender development package
+libXrandr.x86_64: X.Org X11 libXrandr runtime library
+xhost.x86_64: Manage hosts or users allowed to connect to the X server
+xorg-x11-xauth.x86_64: X.Org X11 X authority utilities
+xrdb.x86_64: X server resource database utility
+libXxf86vm.x86_64: X.Org X11 libXxf86vm runtime library
+libXfixes.x86_64: X Fixes library
+libglvnd-glx.x86_64: GLX support for libglvnd
+mesa-libGL.x86_64: Mesa libGL runtime libraries
+libglvnd-devel.x86_64: Development files for libglvnd
+mesa-libGL-devel.x86_64: Mesa libGL development package
+libxkbfile.x86_64: X.Org X11 libxkbfile runtime library
+setxkbmap.x86_64: X11 keymap client
+xmodmap.x86_64: Edit and display the X11 core keyboard map
+xorg-x11-xinit.x86_64: X.Org X11 X Window System xinit startup scripts
+motif.x86_64: Run-time libraries and programs
+mesa-libGLw.x86_64: Xt / Motif OpenGL widgets
+gettext-envsubst.x86_64: Substitutes the values of environment variables
+gettext-runtime.x86_64: GNU runtime libraries and programs for producing multi-lingual messages
+gettext.x86_64: GNU tools and libraries for localized translated messages
+bzip2-devel.x86_64: Libraries and header files for apps which will use bzip2
+brotli.x86_64: Lossless compression algorithm
+brotli-devel.x86_64: Lossless compression algorithm (development files)
+freetype-devel.x86_64: FreeType development libraries and header files
+harfbuzz-devel.x86_64: Development files for harfbuzz
+fontconfig-devel.x86_64: Font configuration and customization library
+libXft-devel.x86_64: X.Org X11 libXft development package
+motif-devel.x86_64: Development libraries and header files
+mesa-libGLw-devel.x86_64: Mesa libGLw development package
+mesa-libGLU-devel.x86_64: Development files for mesa-libGLU
+glx-utils.x86_64: GLX utilities
+mesa-libOSMesa-devel.x86_64: Mesa offscreen rendering development package
+libXi.x86_64: X.Org X11 libXi runtime library
+freeglut.x86_64: A freely licensed alternative to the GLUT library
+libXfixes-devel.x86_64: Development files for libXfixes
+libXcursor.x86_64: Cursor management library
+libXcursor-devel.x86_64: Development files for libXcursor
+freeglut-devel.x86_64: Freeglut developmental libraries and header files
+libdnf.x86_64: Library providing simplified C and Python API to libsolv
+python3-libdnf.x86_64: Python 3 bindings for the libdnf library.
+python3-hawkey.x86_64: Python 3 bindings for the hawkey library
+dnf-data.noarch: Common data and configuration files for DNF
+python3-dnf.noarch: Python 3 interface to DNF
+dnf.noarch: Package manager
+python3-systemd.x86_64: Python module wrapping libsystemd functionality
+python3-six.noarch: Python 2 and 3 compatibility utilities
+python3-dateutil.noarch: Powerful extensions to the standard datetime module
+python3-distro.noarch: Linux Distribution - a Linux OS platform information API
+dbus-libs.x86_64: Libraries for accessing D-BUS
+python3-dbus.x86_64: D-Bus bindings for python3
+python3-dnf-plugins-core.noarch: Core Plugins for DNF
+dnf-plugins-core.noarch: Core Plugins for DNF
+yum.noarch: Package manager
+gpg-pubkey.(none): cudatools <cudatools@nvidia.com> public key
+cuda-toolkit-config-common.noarch: Common config package for CUDA Toolkit.
+cuda-toolkit-12-config-common.noarch: Common config package for CUDA Toolkit 12.
+cuda-toolkit-12-4-config-common.noarch: Common config package for CUDA Toolkit 12.4.
+nspr.x86_64: Netscape Portable Runtime
+libstdc++.x86_64: GNU Standard C++ Library
+nss-util.x86_64: Network Security Services Utilities Library
+libcufile-12-4.x86_64: Library for GPU Direct Storage with CUDA 12-4
+cuda-cudart-12-4.x86_64: CUDA Runtime native runtime libraries
+cuda-opencl-12-4.x86_64: CUDA OpenCL native runtime libraries
+libcublas-12-4.x86_64: CUBLAS native runtime libraries
+libcufft-12-4.x86_64: CUFFT native runtime libraries
+libcurand-12-4.x86_64: CURAND native runtime libraries
+libcusolver-12-4.x86_64: CUSOLVER native runtime libraries
+libcusparse-12-4.x86_64: CUSPARSE native runtime libraries
+libnpp-12-4.x86_64: NPP native runtime libraries
+libnvfatbin-12-4.x86_64: NVIDIA compiler library for fatbin interaction
+libnvjitlink-12-4.x86_64: NVJIT link compiler LTO functionality native runtime library
+libnvjpeg-12-4.x86_64: NVJPEG native runtime libraries
+crypto-policies.noarch: System-wide crypto policies
+crypto-policies-scripts.noarch: Tool to switch between crypto policies
+alsa-lib.x86_64: The Advanced Linux Sound Architecture (ALSA) library
+libXtst.x86_64: X.Org X11 libXtst runtime library
+libXcomposite.x86_64: X Composite Extension library
+cuda-nvrtc-12-4.x86_64: NVRTC native runtime libraries
+cuda-nvprof-12-4.x86_64: CUDA Profiler tools
+cuda-nvml-devel-12-4.x86_64: NVML native dev links, headers.
+cuda-nvdisasm-12-4.x86_64: CUDA disassembler
+cuda-cccl-12-4.x86_64: CUDA CCCL
+cuda-cudart-devel-12-4.x86_64: CUDA Runtime native dev links, headers
+cuda-libraries-12-4.x86_64: CUDA Libraries 12.4 meta-package
+cuda-nvrtc-devel-12-4.x86_64: NVRTC native dev links, headers
+libnvjpeg-devel-12-4.x86_64: NVJPEG native dev links, headers
+libnvjitlink-devel-12-4.x86_64: NVJIT link native dev links, headers
+libnvfatbin-devel-12-4.x86_64: nvfatbin link native dev links, headers
+libnpp-devel-12-4.x86_64: NPP native dev links, headers
+libcusparse-devel-12-4.x86_64: CUSPARSE native dev links, headers
+libcusolver-devel-12-4.x86_64: CUSOLVER native dev links, headers
+libcurand-devel-12-4.x86_64: CURAND native dev links, headers
+libcufft-devel-12-4.x86_64: CUBLAS native dev links, headers
+libcublas-devel-12-4.x86_64: CUBLAS native dev links, headers
+cuda-opencl-devel-12-4.x86_64: CUDA OpenCL native dev links, headers
+libcufile-devel-12-4.x86_64: Library for GPU Direct Storage native dev links, headers
+nss-softokn-freebl.x86_64: Freebl library for the Network Security Services
+nss-softokn.x86_64: Network Security Services Softoken Module
+nss-sysinit.x86_64: System NSS Initialization
+nss.x86_64: Network Security Services
+libstdc++-devel.x86_64: Header files and libraries for C++ development
+gcc-c++.x86_64: C++ support for GCC
+ttmkfdir.x86_64: Utility to create fonts.scale files for truetype fonts
+xkeyboard-config.noarch: X Keyboard Extension configuration data
+libxkbcommon.x86_64: X.Org X11 XKB parsing library
+libxkbcommon-x11.x86_64: X.Org X11 XKB keymap creation library
+tzdata-java.noarch: Timezone data for Java
+xcb-util-wm.x86_64: Client and window-manager helper library on top of libxcb
+xcb-util-renderutil.x86_64: Convenience functions for the Render extension
+xcb-util-keysyms.x86_64: Standard X key constants and keycodes conversion on top of libxcb
+xcb-util.x86_64: Convenience libraries sitting on top of libxcb
+xcb-util-image.x86_64: Port of Xlib's XImage and XShmImage functions on top of libxcb
+openssl.x86_64: Utilities from the general purpose cryptography library with TLS implementation
+gds-tools-12-4.x86_64: Tools for GPU Direct Storage
+lksctp-tools.x86_64: User-space access to Linux Kernel SCTP
+libfontenc.x86_64: X.Org X11 libfontenc runtime library
+mkfontscale.x86_64: Tool to generate legacy X11 font system index files
+xorg-x11-fonts-Type1.noarch: Type1 fonts provided by the X Window System
+libXdamage.x86_64: X Damage extension library
+nsight-systems-2023.4.4.x86_64: Statistical sampling profiler with tracing features
+cuda-nsight-systems-12-4.x86_64: NVIDIA Nsight Systems
+javapackages-filesystem.noarch: Java packages filesystem layout
+copy-jdk-configs.noarch: JDKs configuration files copier
+avahi-libs.x86_64: Libraries for avahi run-time use
+cups-libs.x86_64: CUPS printing system - libraries
+java-17-openjdk-headless.x86_64: OpenJDK 17 Headless Runtime Environment
+java-17-openjdk.x86_64: OpenJDK 17 Runtime Environment
+cuda-nsight-12-4.x86_64: CUDA nsight
+cuda-nvvp-12-4.x86_64: CUDA nvvp
+nsight-compute-2024.1.1.x86_64: Nsight compute package
+cuda-nsight-compute-12-4.x86_64: NVIDIA Nsight Compute
+cuda-profiler-api-12-4.x86_64: CUDA Profiler API
+cuda-nvvm-12-4.x86_64: CUDA NVVM
+cuda-nvtx-12-4.x86_64: CUDA NVIDIA Tools Extension
+cuda-nvprune-12-4.x86_64: CUDA nvprune
+cuda-gdb-12-4.x86_64: CUDA debugger API
+cuda-driver-devel-12-4.x86_64: CUDA Driver native dev stub library
+cuda-libraries-devel-12-4.x86_64: CUDA Libraries 12.4 development meta-package
+cuda-visual-tools-12-4.x86_64: CUDA visual tools
+cuda-documentation-12-4.x86_64: CUDA documentation
+cuda-cuxxfilt-12-4.x86_64: CUDA cuxxfilt
+cuda-cupti-12-4.x86_64: CUDA Profiling Tools Interface
+cuda-cuobjdump-12-4.x86_64: CUDA cuobjdump
+cuda-crt-12-4.x86_64: CUDA crt
+cuda-nvcc-12-4.x86_64: CUDA nvcc
+cuda-compiler-12-4.x86_64: CUDA core tools
+cuda-sanitizer-12-4.x86_64: CUDA Sanitizer
+cuda-command-line-tools-12-4.x86_64: CUDA command-line tools
+cuda-tools-12-4.x86_64: CUDA tools
+cuda-toolkit-12-4.x86_64: CUDA Toolkit 12.4 meta-package

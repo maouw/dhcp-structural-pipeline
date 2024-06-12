@@ -1,0 +1,33 @@
+cmake_minimum_required(VERSION 3.0)
+
+project(dot)
+
+# if(CMAKE_VERSION VERSION_LESS "2.8.12")
+#     function(add_compile_options)
+#         add_definitions(${ARGN})
+#     endfunction(add_compile_options)
+# endif()
+
+# add_compile_options(-std=c99 -Wall -Wextra -Wno-unused-parameter -Wconversion -Wshadow -pedantic)
+
+SET(DOT_USEFMA 1)
+SET(DOT_USEAVX512 1)
+include_directories(../cpuinfo/src)
+
+add_library(dot src/dot.c)
+add_library(dot_naive src/dot_naive.c)
+add_library(dot_sse2 src/dot_sse2.c)
+add_library(dot_avx src/dot_avx.c)
+add_library(dot_avxfma src/dot_avx.c)
+add_library(dot_avx512 src/dot_avx512.c)
+add_library(dot_avx512fma src/dot_avx512.c)
+target_link_libraries(dot dot_naive dot_sse2 dot_avx dot_avxfma dot_avx512 dot_avx512fma cpuinfo ${CARET_QT5_LINK})
+set_target_properties(dot_avxfma PROPERTIES COMPILE_FLAGS "")
+set_target_properties(dot_avx512 PROPERTIES COMPILE_FLAGS "")
+set_target_properties(dot_avx512fma PROPERTIES COMPILE_FLAGS "")
+target_compile_options(dot_avxfma PRIVATE)
+target_compile_options(dot_avx512 PRIVATE)
+target_compile_options(dot_avx512fma PRIVATE)
+target_compile_options(dot_avx PRIVATE)
+target_compile_options(dot_sse2 PRIVATE)
+target_include_directories(dot PRIVATE ../cpuinfo/src)

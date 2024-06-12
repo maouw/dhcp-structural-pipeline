@@ -328,40 +328,17 @@ RUN cmake --install .
 
 FROM build-vtk AS build-itk
 WORKDIR /opt/build/itk
-ADD --keep-git-dir=true https://github.com/InsightSoftwareConsortium/ITK.git#v5.4rc04 src
-RUN sed -nE 's/icpc/icpx/g; s/icc/icx/g' src/CMake/ITKSetStandardCompilerFlags.cmake
-
+ADD --keep-git-dir=true https://github.com/InsightSoftwareConsortium/ITK.git#release src
 RUN cp /opt/build/CMakeUserPresets.json src/
-#RUN cd src/Modules/ThirdParty/VNL && rm -rf vxl && git clone --depth=1 https://github.com/vxl/vxl vxl
+RUN cd src/Modules/ThirdParty/VNL && rm -rf vxl && git clone --depth=1 https://github.com/vxl/vxl vxl
 
-#RUN echo "" > src/CMake/ITKSetStandardCompilerFlags.cmake
 WORKDIR /opt/build/itk/build
 RUN cp -v --no-clobber /opt/build/eigen/src/cmake/FindEigen3.cmake /opt/build/cmake-dir/Modules/
-ARG __INTEL_PRE_CFLAGS="-fp-model=precise -diag-disable=10441 -diag-disable=15009 -diag-disable=10006 -diag-disable=10370 -diag-disable=10148 -diag-disable=10145 -wd10145 -qmkl -qtbb"
-ARG __INTEL_POST_CFLAGS="-xCORE-AVX2 -axSKYLAKE-AVX512 -std=c++17"
-ENV __INTEL_PRE_CFLAGS="${__INTEL_PRE_CFLAGS}"
-ENV __INTEL_POST_CFLAGS="${__INTEL_POST_CFLAGS}"
-ENV CMAKE_PREFIX_PATH="${DHCP_PREFIX}/lib/cmake:${CMAKE_PREFIX_PATH:-}"
-ENV LD_LIBRARY_PATH="${DHCP_PREFIX}/lib:${LD_LIBRARY_PATH:-}"
-ENV CPATH="${DHCP_PREFIX}/include/eigen3:${CPATH}"
-ARG NVCC_APPEND_FLAGS="-Xcompiler=-DEIGEN_USE_MKL_ALL -Xcompiler=-march=x86-64-v3 -Xcompiler=-O3"
-ENV NVCC_APPEND_FLAGS="${NVCC_APPEND_FLAGS}"
 
 RUN source "${ONEAPI_ROOT}/setvars.sh" && \
+    export  __INTEL_PRE_CFLAGS="-fp-model=precise -DEIGEN_USE_MKL_ALL -qopt-zmm-usage=high -qmkl=parallel -O3 -xCORE-AVX2 -axSKYLAKE-AVX512" && \
+     export  __INTEL_POST_CFLAGS="-fp-model=precise" && \
     cmake --preset intel-classic \
-            -D CMAKE_CXX_STANDARD=17 \
-            -D CMAKE_CXX_EXTENSIONS:BOOL=OFF \
-            -D BUILD_DOCUMENTATION:BOOL=OFF \
-            -D BUILD_EXAMPLES:BOOL=OFF \
-            -D BUILD_SHARED_LIBS:BOOL=ON \
-            -D BUILD_TESTING:BOOL=OFF \
-            -D EIGEN_USE_MKL:BOOL=ON \
-            -D EIGEN_USE_MKL_ALL:BOOL=ON \
-            -D CMAKE_CXX_VISIBILITY_PRESET="default" \
-            -D ITK_BUILD_DEFAULT_MODULES:BOOL=OFF \
-            -D ITK_C_WARNING_FLAGS="-Wno-uninitialized -Wno-unused-parameter -wd1268 -wd981 -wd383 -wd1418 -wd1419 -wd2259 -wd1572 -wd424 -Wno-long-double -Wcast-align -Wdisabled-optimization -Wextra -Wformat=2 -Winvalid-pch -Wno-format-nonliteral -Wpointer-arith -Wshadow -Wunused -Wwrite-strings -Wno-strict-overflow" \
-            -D ITK_CXX_WARNING_FLAGS="-wd1268 -wd981 -wd383 -wd1418 -wd1419 -wd2259 -wd1572 -wd424  -Wno-long-double -Wcast-align -Wdisabled-optimization -Wextra -Wformat=2 -Winvalid-pch -Wno-format-nonliteral -Wpointer-arith -Wshadow -Wunused -Wwrite-strings -Wno-strict-overflow -Wno-deprecated -Wno-invalid-offsetof -Wno-undefined-var-template -Woverloaded-virtual -Wctad-maybe-unsupported -Wstrict-null-sentinel" \
-            -D CMAKE_BUILD_TYPE=Release \
             -D CMAKE_CXX_STANDARD=17 \
             -D BUILD_DOCUMENTATION:BOOL=OFF \
             -D BUILD_EXAMPLES:BOOL=OFF \
@@ -370,8 +347,10 @@ RUN source "${ONEAPI_ROOT}/setvars.sh" && \
             -D CMAKE_CXX_VISIBILITY_PRESET="default" \
             -D ITK_USE_KWSTYLE=OFF \
             -D ITK_BUILD_DEFAULT_MODULES:BOOL=OFF \
+            -D ITK_TEMPLATE_VISIBILITY_DEFAULT:BOOL=ON \
             -D ITK_USE_MKL:BOOL=ON \
             -D ITK_USE_GPU:BOOL=ON \
+            -D ITK_USE_SYSTEM_DCMTK:BOOL=ON \
             -D ITK_USE_SYSTEM_EIGEN:BOOL=ON \
             -D ITK_USE_SYSTEM_EXPAT:BOOL=ON \
             -D ITK_USE_SYSTEM_HDF5:BOOL=ON \
@@ -418,84 +397,125 @@ RUN . "${ONEAPI_ROOT}/setvars.sh" && \
     /usr/bin/time -v cmake --build . -- -j ${NCPU:-$(nproc)} || { tail -v -n 50 CMakeFiles/*.log 2>/dev/null || true; exit 1; }
 
 RUN cmake --install .
+            
+ARG MAMBA_DOCKERFILE_ACTIVATE=1
+WORKDIR /opt/build/itk
+ADD --keep-git-dir=true https://github.com/InsightSoftwareConsortium/ITK.git#release src
+SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
+RUN <<-EOF
 
-FROM build-itk AS build-vtk-ioply
-WORKDIR /opt/build/vtk/build
-RUN source "${ONEAPI_ROOT}/setvars.sh" && \
-    cmake -D VTK_MODULE_ENABLE_VTK_IOPLY:STRING=WANT .
+    
+    source "/opt/build/compilervars.sh"
+    fix_cmake_intel_openmp
+    mkdir -p build && cd build
 
-RUN . "${ONEAPI_ROOT}/setvars.sh" && \
-	/usr/bin/time -v cmake --build . -- -j ${NCPU:-$(nproc)} || { tail -v -n 50 CMakeFiles/*.log 2>/dev/null || true; exit 1; }
+    cp -v --no-clobber /opt/build/eigen/src/cmake/FindEigen3.cmake /opt/build/cmake-dir/Modules/
+    cmake --preset intel-llvm \
+    export INTEL_OPTIMIZER_IPO="-ipo-separate"
+    set_compiler_flags "" "-w2 -wd869 -wd593 -wd1286" "${INTEL_MKL_TBB_STATIC_FLAGS} -static-intel -qoverride-limits"
+    cmake -Wno-dev -GNinja \
+            -D BUILD_DOCUMENTATION:BOOL=OFF \
+            -D BUILD_EXAMPLES:BOOL=OFF \
+            -D BUILD_SHARED_LIBS:BOOL=ON \
+            -D BUILD_TESTING:BOOL=OFF \
+            -D CMAKE_CXX_VISIBILITY_PRESET="default" \
+            -D ITK_USE_KWSTYLE=OFF \
+            -D ITK_BUILD_DEFAULT_MODULES:BOOL=OFF \
+            -D ITK_C_WARNING_FLAGS="-Wno-uninitialized -Wno-unused-parameter -wd1268 -wd981 -wd383 -wd1418 -wd1419 -wd2259 -wd1572 -wd424 -Wno-long-double -Wcast-align -Wdisabled-optimization -Wextra -Wformat=2 -Winvalid-pch -Wno-format-nonliteral -Wpointer-arith -Wshadow -Wunused -Wwrite-strings -Wno-strict-overflow" \
+            -D ITK_CXX_WARNING_FLAGS="-wd1268 -wd981 -wd383 -wd1418 -wd1419 -wd2259 -wd1572 -wd424  -Wno-long-double -Wcast-align -Wdisabled-optimization -Wextra -Wformat=2 -Winvalid-pch -Wno-format-nonliteral -Wpointer-arith -Wshadow -Wunused -Wwrite-strings -Wno-strict-overflow -Wno-deprecated -Wno-invalid-offsetof -Wno-undefined-var-template -Woverloaded-virtual -Wctad-maybe-unsupported -Wstrict-null-sentinel" \
+            -D ITK_TEMPLATE_VISIBILITY_DEFAULT:BOOL=ON \
+            -D ITK_USE_MKL:BOOL=ON \
+            -D ITK_USE_GPU:BOOL=ON \
+            -D ITK_USE_SYSTEM_DCMTK:BOOL=ON \
+            -D ITK_USE_SYSTEM_EIGEN:BOOL=ON \
+            -D ITK_USE_SYSTEM_EXPAT:BOOL=ON \
+            -D ITK_USE_SYSTEM_FFTW:BOOL=ON \
+            -D ITK_USE_SYSTEM_HDF5:BOOL=ON \
+            -D ITK_USE_SYSTEM_JPEG:BOOL=ON \
+            -D ITK_USE_SYSTEM_MINC:BOOL=OFF \
+            -D ITK_USE_SYSTEM_PNG:BOOL=ON \
+            -D ITK_USE_SYSTEM_TIFF:BOOL=ON \
+            -D ITK_USE_SYSTEM_ZLIB:BOOL=ON \
+            -D ITK_USE_TBB:BOOL=ON \
+            -D ITK_USE_TBB_WITH_MKL:BOOL=ON \
+            -D ITKGroup_Core:BOOL=ON \
+            -D Module_ITKBiasCorrection:BOOL=ON \
+            -D Module_ITKCommon:BOOL=ON \
+            -D Module_ITKImageGrid:BOOL=ON \
+            -D Module_ITKImageIntensity:BOOL=ON \
+            -D Module_ITKImageStatistics:BOOL=ON \
+            -D Module_ITKIOCSV:BOOL=ON \
+            -D Module_ITKIOHDF5:BOOL=ON \
+            -D Module_ITKIOImageBase:BOOL=ON \
+            -D Module_ITKIOJPEG:BOOL=ON \
+            -D Module_ITKIOMesh:BOOL=ON \
+            -D Module_ITKIOMeshBase:BOOL=ON \
+            -D Module_ITKIOMeshGifti:BOOL=ON \
+            -D Module_ITKIOMeshOBJ:BOOL=ON \
+            -D Module_ITKIOMeshOFF:BOOL=ON \
+            -D Module_ITKIOMeshVTK:BOOL=ON \
+            -D Module_ITKIOMeta:BOOL=ON \
+            -D Module_ITKIOMINC:BOOL=ON \
+            -D Module_ITKIONIFTI:BOOL=ON \
+            -D Module_ITKIOPNG:BOOL=ON \
+            -D Module_ITKIORAW:BOOL=ON \
+            -D Module_ITKIOTIFF:BOOL=ON \
+            -D Module_ITKIOTransformBase:BOOL=ON \
+            -D Module_ITKTransformFactory:BOOL=ON \
+            -D Module_ITKIOTransformHDF5:BOOL=ON \
+            -D Module_ITKIOTransformInsightLegacy:BOOL=ON \
+            -D Module_ITKIOVTK:BOOL=ON \
+            -D Module_ITKIOXML:BOOL=ON \
+            -D Module_ITKTestKernel:BOOL=OFF \
+            -D Module_ITKThresholding:BOOL=ON \
+            -D Module_ITKTransform:BOOL=ON \
+        ../src || { tail -v -n +0 CMakeFiles/*.log || true; exit 1; }
+    cmake --build . -- -k 1 -l ${NCPU}
+    cmake --install .
+EOF
 
-RUN cmake --install .
-
-FROM build-vtk-ioply AS build-mirtk-src
+FROM build-itk AS build-mirtk
+ARG MAMBA_DOCKERFILE_ACTIVATE=1
 WORKDIR /opt/build/mirtk
+SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 ADD --link --keep-git-dir=true https://github.com/BioMedIA/MIRTK.git#973ce2fe3f9508dec68892dbf97cca39067aa3d6 src
 COPY --link src/ext/antsCommandLineOption.h antsCommandLineOption.h
-RUN cp /opt/build/CMakeUserPresets.json src/
+SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
+RUN <<-EOF
 
-RUN cp /opt/build/mirtk/antsCommandLineOption.h src/Packages/DrawEM/ThirdParty/ANTs/ && \
-    cp /opt/build/vtk/src/CMake/FindTBB.cmake src/CMake/Modules && \
-    echo 'find_library(LZ4_LIBRARIES NAMES libvtklz4-9.3.so HINTS "lz4/lib")' >> src/CMakeLists.txt && \
-    echo 'link_libraries(${LZ4_LIBRARIES})' >> src/CMakeLists.txt && \
-    echo 'add_definitions(${LZ4_DEFINITIONS})' >> src/CMakeLists.txt
+     #( cd src/Packages/Deformable && git checkout 9070e8e60e8721ed9675cdd6390de4e2f25ae2f3 )
+     #( cd src/Packages/DrawEM; git checkout d2ff4e307638727d66aff3ece25496677bbd8df1; mv /opt/build/mirtk/antsCommandLineOption.h ThirdParty/ANTs/ )
+     cp /opt/build/mirtk/antsCommandLineOption.h src/Packages/DrawEM/ThirdParty/ANTs/
+     cp /opt/build/vtk/src/CMake/FindTBB.cmake /opt/dhcp/lib/cmake/vtk-9.2/vtkm/
+     cp /opt/build/vtk/src/CMake/FindTBB.cmake src/CMake/Modules/
 
-ENV CMAKE_PREFIX_PATH="${DHCP_PREFIX}/cmake/vtk-9.3:${CMAKE_PREFIX_PATH:-}"
-FROM build-mirtk-src AS build-mirtk-configure
-RUN ldconfig
-ENV __INTEL_PRE_CFLAGS="${__INTEL_PRE_CFLAGS:-} -wd10430 -Wno-unused-command-line-argument -llz4 -L${DHCP_PREFIX}/opt/dhcp/lib/libvtklz4-9.3.so"
-
-WORKDIR /opt/build/mirtk/build
-RUN . "${ONEAPI_ROOT}/setvars.sh" && \
-    cmake --preset intel-llvm \
+    source /opt/build/compilervars.sh
+    export INTEL_OPTIMIZER_IPO="-qoverride-limits -no-inline-factor 800 -ipo"
+    set_compiler_flags "" "-w2 -wd869 -wd593 -wd1286 -wd186 -wd612 -wd111 -wd654 -wd1125" "${INTEL_MKL_TBB_STATIC_FLAGS} -static-intel"
+    export TBB_ROOT="${TBBROOT}"
+    mkdir -p build && cd build
+    
+    cmake --debug-output -Wno-dev -GNinja \
             -D BUILD_DOCUMENTATION:BOOL=OFF \
+            -D CMAKE_CXX_STANDARD=17 \
+            -D CMAKE_CXX_EXTENSIONS=ON \
             -D BUILD_EXAMPLES:BOOL=OFF \
             -D BUILD_CHANGELOG:BOOL=OFF \
             -D BUILD_SHARED_LIBS:BOOL=ON \
-            -D BUILD_TESTING:BOOL=OFF \
-            -D USE_SYSTEM_EIGEN:BOOL=ON \
-            -D WITH_EIGEN3:BOOL=ON \
+            -D BUILD_TESTING:BOOL=ON \
             -D WITH_FLANN:BOOL=ON \
             -D WITH_MATLAB:BOOL=OFF \
             -D WITH_TBB:BOOL=ON \
             -D WITH_VTK:BOOL=ON \
             -D WITH_ITK:BOOL=ON \
-            -D DEPENDS_TBB_DIR="${TBBROOT}" \
-            -D DEPENDS_ITK_DIR="${DHCP_PREFIX}" \
-            -D DEPENDS_VTK_DIR="/opt/dhcp/lib/cmake/vtk-9.3" \
-            -D TBB_DIR="${TBBROOT}" \
-            -D DEPENDS_Eigen3_DIR="${DHCP_PREFIX}/include/eigen3" \
+            -D WITH_ZLIB:BOOL=ON \
+            -D Eigen3_INCLUDE_DIR="${DHCP_PREFIX}/include/eigen3" \
             -D MODULE_Deformable:BOOL=ON \
             -D MODULE_DrawEM:BOOL=ON \
-            -D MODULE_PointSet:BOOL=ON \
-            -D MODULE_Scripting:BOOL=ON \
-        ../src
-
-FROM build-mirtk-configure AS build-mirtk
-RUN . "${ONEAPI_ROOT}/setvars.sh" && \
-    /usr/bin/time -v cmake --build . -t lib/libMIRTKPointSet.so.0.0.0 -- -j ${NCPU:-$(nproc)} -k 1 || { tail -v -n 50 CMakeFiles/*.log 2>/dev/null || true; exit 1; }
-
-RUN . "${ONEAPI_ROOT}/setvars.sh" && \
-    echo "__INTEL_PRE_CFLAGS=\"${__INTEL_PRE_CFLAGS:-}\"" && \
-    echo "__INTEL_POST_CFLAGS=\"${__INTEL_POST_CFLAGS:-}\"" && \
-    /usr/bin/time -v cmake --build . -t lib/tools/deform-mesh -- -j ${NCPU:-$(nproc)} -k 1 || { tail -v -n 50 CMakeFiles/*.log 2>/dev/null || true; exit 1; }
-
-RUN . "${ONEAPI_ROOT}/setvars.sh" && \
-    export __INTEL_PRE_CFLAGS="${__INTEL_PRE_CFLAGS:-} -wd10430 -Wno-unused-command-line-argument -llz4 -L${DHCP_PREFIX}/opt/dhcp/lib/libvtklz4-9.3.so" && \
-    /usr/bin/time -v cmake --build . -- -j ${NCPU:-$(nproc)} || { tail -v -n 50 CMakeFiles/*.log 2>/dev/null || true; exit 1; }
-
-RUN cmake --install .
-
-WORKDIR /opt/build/mirtk/src/Packages/DrawEM
-RUN DRAWEMDIR="${DHCP_PREFIX}/share/DrawEM" && \
-    mkdir -p "${DRAWEMDIR}" && \
-    cp -Rv atlases "${DRAWEMDIR}" && \
-    cp -R label_names "${DRAWEMDIR}" && \
-    cp -R parameters "${DRAWEMDIR}" && \
-    cp -R scripts "${DRAWEMDIR}" && \
-    git config --worktree --unset-all core.worktree && \
-    cp -R /opt/build/mirtk/src/.git/modules/Packages/DrawEM "${DRAWEMDIR}/.git"
+        ../src || { tail -v -n +0 CMakeFiles/*.log || true; exit 1; }
+    cmake --build . -- -k 1 -l ${NCPU}
+    cmake --install .
+EOF
 
 #     #git checkout be86b02d47a7ce74b17224891e25899c30f37d74 -- CMake/Modules/FindTBB.cmake Modules/Common/include/mirtk/Parallel.h Modules/Common/include/mirtk/Parallel.h Modules/Common/src/Parallel.cc
 #     # sed -Ei 's/(^.*\bMIRTK_Common_EXPORT\b.*\btbb_scheduler.*$)/\/\/ \1/g' Modules/Common/include/mirtk/Parallel.h
@@ -552,83 +572,71 @@ RUN <<-EOF
 EOF
 
 
-FROM build-mirtk AS build-workbench-src
+FROM build-mirtk AS build-workbench
+ARG MAMBA_DOCKERFILE_ACTIVATE=1
 WORKDIR /opt/build/workbench
-ADD --link --keep-git-dir=true https://github.com/Washington-University/workbench.git src
-COPY src/ext/FindQwt.cmake /opt/build/cmake-dir/Modules/FindQwt.cmake
-COPY src/ext/workbench/src/Nifti/NiftiHeader.cxx src/src/Nifti/NiftiHeader.cxx
+SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
+ADD --link --keep-git-dir=true https://github.com/Washington-University/workbench.git#f0925edfd37db3808794a4df6355b18c80f49a04 src
+COPY src/ext/NiftiHeader.cxx /opt/build/workbench/src/src/Nifti/NiftiHeader.cxx
+COPY src/ext/FindQwt.cmake /opt/build/workbench/FindQwt.cmake
+RUN <<-EOF
 
-RUN sed --in-place -E \
-    's/\.\*icpc\$/ic[px]c$/g; s/\(\s*CMAKE_COMPILER_IS_GNUCC\s+OR\s+CLANG_FLAG\s*\)/TRUE/g; /^\s*ADD_SUBDIRECTORY\s*\(\s*(GuiQt|Qwt|Desktop)\s*\)/d; s/PKG_CHECK_MODULES\(\s*Qwt\s+qwt\s*\)/FIND_PACKAGE(Qwt)/g; s/-openmp-link=static//g; s/static-intel//g; /PKG_CHECK_MODULES\(GLMath/d' \
-    src/src/CMakeLists.txt
+    sed --in-place -E 's/-openmp-link=static//g' src/src/CMakeLists.txt
+    sed --in-place -E 's/DOT_USEFMA\s*0\s*[)]/DOT_USEFMA 1)/g' src/src/kloewe/dot/CMakeLists.txt
+    sed --in-place -E 's/DOT_USEAVX512\s*0\s*[)]/DOT_USEAVX512 1)/g' src/src/kloewe/dot/CMakeLists.txt
+    sed --in-place 's/if ((CMAKE_COMPILER_IS_GNUCC OR CLANG_FLAG) AND CMAKE_SIZEOF_VOID_P EQUAL 8)/if ((${CMAKE_CXX_COMPILER} MATCHES "^.*icpc$" OR CMAKE_COMPILER_IS_GNUCC OR CLANG_FLAG) AND CMAKE_SIZEOF_VOID_P EQUAL 8)/g' src/src/CMakeLists.txt
+    sed --in-place -E '/^\s*ADD_SUBDIRECTORY\s*\(\s*(GuiQt|Qwt|Desktop|Qwt)\s*\)/d' src/src/CMakeLists.txt
+    sed --in-place -E 's/PKG_CHECK_MODULES\(\s*Qwt\s+qwt\s*\)/FIND_PACKAGE(Qwt)/g' src/src/CMakeLists.txt
+    sed --in-place -E '/^GuiQt\s*$/d' src/src/Tests/CMakeLists.txt
+    sed --in-place -E '/^\$\{CMAKE_SOURCE_DIR\}\/GuiQt/d' src/src/Tests/CMakeLists.txt
 
+    mkdir -p /opt/build/cmake-dir/Modules
+    cp /usr/share/quazip/FindQuaZip5.cmake /opt/build/cmake-dir/Modules/FindQuaZip.cmake
+    cp FindQwt.cmake /opt/build/cmake-dir/Modules/FindQwt.cmake
 
-RUN sed --in-place -E '/^GuiQt\s*$/d; /^\$\{CMAKE_SOURCE_DIR\}\/GuiQt/d' src/src/Tests/CMakeLists.txt
+    (cd src/src/CZIlib/CZI && ln -sv eigen Eigen)
 
-
-RUN cp /opt/build/CMakeUserPresets.json src/src/ 
-RUN cd src/src/CZIlib/CZI && ln -sv eigen Eigen
-RUN cp /usr/share/quazip/QuaZip5Config.cmake /opt/build/cmake-dir/Modules/FindQuaZip.cmake
-
-#RUN export DEBIAN_FRONTEND=noninteractive && apt-get update -q && apt-get install -yq --no-install-recommends intel-oneapi-mkl-sycl
-
-RUN ldconfig
-
-FROM build-workbench-src AS build-workbench
-ENV BASH_ENV="${ONEAPI_ROOT}/setvars.sh"
-
-WORKDIR /opt/build/workbench/build
-ENV __INTEL_PRE_CFLAGS="-fp-model=precise -diag-disable=10441 -diag-disable=15009 -diag-disable=10006 -diag-disable=10370 -diag-disable=10148 -diag-disable=10145 -wd10145 -wd10430 -Wno-unused-command-line-argument -Wno-inconsistent-missing-override -Wno-narrowing -Wno-unused-local-typedefs -Wno-deprecated-declarations -qopt-zmm-usage=high -qmkl=parallel -Wno-static-in-inline -Wp,-DEIGEN_USE_MKL_ALL -DEIGEN_USE_MKL_ALL -O3 -std=c++17 -xCORE-AVX2 -axSKYLAKE-AVX512  -Wl,--as-needed -lGL -lGLU -lstdc++"
-ENV __INTEL_POST_CFLAGS=""
-RUN cmake --preset intel-llvm -Wno-dev \
-            -D BUILD_DOCUMENTATION:BOOL=OFF \
-            -D BUILD_EXAMPLES:BOOL=OFF \
-            -D CMAKE_CXX_EXTENSIONS:BOOL=OFF \
-            -D CMAKE_CXX_STANDARD_REQUIRED:BOOL=ON \
+    mkdir -p build && cd build
+    export INTEL_OPTIMIZER_IPO=''
+    source "/opt/build/compilervars.sh"
+    set_compiler_flags "-wd9 -I/opt/build/workbench/src/src/CZIlib/CZI" "-std=c++17 ${INTEL_MKL_OPENMP_DYNAMIC_FLAGS}"
+    cmake -Wno-dev -GNinja \
             -D CMAKE_CXX_STANDARD=17 \
-            -D WORKBENCH_USE_QT5_QOPENGL_WIDGET=TRUE \
+            -D CMAKE_CXX_EXTENSIONS=OFF \
+            -D WORKBENCH_MESA_DIR=/usr \
             -D WORKBENCH_USE_QT5=TRUE \
             -D WORKBENCH_USE_SIMD=TRUE \
-            -D WORKBENCH_MESA_DIR=/usr \
-            -D WORKBENCH_INCLUDE_HELP_HTML_RESOURCES=FALSE \
+            -D WORKBENCH_USE_QT5_QOPENGL_WIDGET=TRUE \
+            -D OpenGL_GL_PREFERENCE=GLVND \
         ../src/src
+    cmake --build . -- -k 1 -l ${NCPU}
+    ctest
+    cmake --install .
 
-RUN __INTEL_PRE_CFLAGS="-qopt-zmm-usage=high -qmkl=parallel -Wno-static-in-inline -Wp,-DEIGEN_USE_MKL_ALL -DEIGEN_USE_MKL_ALL -O3" cmake --build . -t dot -- -j "${NCPU:-$(nproc)}" -k 1
+EOF
 
-RUN cmake --build . -- -j "${NCPU:-$(nproc)}" -k 1
-
-RUN ctest
-
-RUN cmake --install .
-
-FROM build-workbench AS build-sphericalmesh-src
+FROM build-workbench AS build-sphericalmesh
+ARG MAMBA_DOCKERFILE_ACTIVATE=1
 WORKDIR /opt/build/sphericalmesh
 SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
 ADD --link --keep-git-dir=true https://github.com/amakropoulos/SphericalMesh.git#c41824cda791b806f79b88f2b27604a2f3268d19 src
+COPY src/ext/SphericalMeshConvertToString.h /opt/build/sphericalmesh/src/include/mirtk/SphericalMeshConvertToString.h
 RUN <<-EOF
     
     # Fix some issues with compilation:
     sed --in-place -E  's/std::to_string/convert_to_string/g' src/include/mirtk/*.h src/src/*.cc
     sed --in-place -E 's/(^#define M.*H_*[[:space:]]*$)/\1\n#include "mirtk\/SphericalMeshConvertToString.h"\n/g' src/include/mirtk/{M2SParameters.h,M2SDiffuser.h,M2SRemesher.h,MeshToSphere.h}
-    sed  --in-place -E  's/include\(\$[{]VTK_USE_FILE[}]\)/include_directories(${VTK_INCLUDE_DIRS})/g' src/CMakeLists.txt
-    
-    cp /opt/build/CMakeUserPresets.json src/
 
-EOF
-COPY src/ext/SphericalMeshConvertToString.h /opt/build/sphericalmesh/src/include/mirtk/SphericalMeshConvertToString.h
-
-FROM  build-sphericalmesh-src AS build-sphericalmesh
-
-WORKDIR /opt/build/sphericalmesh/build
-ENV __INTEL_PRE_CFLAGS="-fp-model=precise -diag-disable=10441 -diag-disable=15009 -diag-disable=10006 -diag-disable=10370 -diag-disable=10148 -diag-disable=10145 -wd10145 -wd10430 -Wno-unused-command-line-argument -Wno-inconsistent-missing-override -Wno-narrowing -Wno-unused-local-typedefs -Wno-deprecated-declarations -qopt-zmm-usage=high -qmkl=parallel -Wno-static-in-inline -Wp,-DEIGEN_USE_MKL_ALL -DEIGEN_USE_MKL_ALL -O3 -xCORE-AVX2 -axSKYLAKE-AVX512 -lstdc++ -std=c++17 -I../src/include"
-ENV __INTEL_POST_CFLAGS=""
-ENV CPATH="${DHCP_PREFIX}/include/vtk-9.3:${CPATH}"
-RUN cmake --preset intel-llvm \
+    mkdir -p build && cd build
+    source "/opt/build/compilervars.sh"
+    set_compiler_flags "" "-std=c++17 ${INTEL_MKL_TBB_STATIC_FLAGS}"
+    cmake -Wno-dev -GNinja \
+            -D CMAKE_CXX_STANDARD=17 \
         ../src
-RUN cmake --build . -- -j "${NCPU:-$(nproc)}" -k 1
-
-
-RUN cmake --install . && install -vpDm755 bin/* "${DHCP_PREFIX}/bin"
+    cmake --build .
+    cmake --install .
+    install -vpDm755 bin/* "${DHCP_PREFIX}/bin"
+EOF
 
 
 # Install FSL:

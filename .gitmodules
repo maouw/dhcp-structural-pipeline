@@ -1,0 +1,22 @@
+[submodule "vtk-m"]
+	path = src/ThirdParty/vtk-m
+	url = https://gitlab.kitware.com/vtk/vtk-m.git
+	branch = release
+[submodule "sphericalmesh"]
+	path = src/ThirdParty/sphericalmesh
+	url = https://github.com/amakropoulos/SphericalMesh.git
+	branch = dhcp-v1.2
+[submodule "mirtk"]
+	path = src/ThirdParty/mirtk
+	url = https://github.com/BioMedIA/MIRTK.git
+[submodule "itk"]
+	path = src/ThirdParty/itk
+	url = https://github.com/InsightSoftwareConsortium/ITK.git
+	branch = release
+[submodule "vtk"]
+	path = src/ThirdParty/vtk
+	url = https://gitlab.kitware.com/vtk/vtk.git
+	branch = release
+[submodule "workbench"]
+	path = src/ThirdParty/workbench
+	url = https://github.com/Washington-University/workbench
