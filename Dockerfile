@@ -535,34 +535,82 @@ RUN --mount=type=cache,target=/opt/build/ccache \
 # Install FSL:
 FROM build-sphericalmesh AS build-fsl
 RUN export CI=1 && \
-    micromamba install --dry-run --yes --verbose -n base --channel intel --channel https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public --channel conda-forge fsl-avwutils==2209.0 fsl-flirt==2111.0 fsl-bet2==2111.0 && \
+    micromamba install --yes --verbose --prefix "${FSLDIR}" --channel intel --channel https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public --channel conda-forge fsl-avwutils==2209.0 fsl-flirt==2111.0 fsl-bet2==2111.0 && \
     micromamba clean --yes --all
 
 FROM build-fsl AS build-pipeline-applications
-WORKDIR "/opt/build/pipeline-applications/build"
-COPY applications /opt/build/pipeline-applications/src
+WORKDIR /opt/build/pipeline-applications/src
+COPY applications applications
+COPY CMakeLists.txt CMakeLists.txt
+RUN cp /opt/build/mirtk/build/lib/mirtk/tools/N4 "${DHCP_PREFIX}/lib/mirtk/tools/N4" && \
+    ln -sfv "${DHCP_PREFIX}/lib/mirtk/tools/N4" "${DHCP_PREFIX}/bin/N4"
+
+WORKDIR /opt/build/pipeline-applications/build
 RUN --mount=type=cache,target=/opt/build/ccache \
-    cmake -D CMAKE_CXX_STANDARD=14 ../src && \
+    export CFLAGS="${CFLAGS} -ipo" CXXFLAGS="${CXXFLAGS} -ipo" && \
+    cmake ../src && \
     cmake --build . && \
     cmake --install . && \
     install -v -Dm755 bin/* "${DHCP_PREFIX}/bin"
 
 FROM build-pipeline-applications AS build-pipeline
-WORKDIR "${DHCP_DIR}"
-COPY --chmod=a+rX dhcp-pipeline.sh parameters scripts version "${DHCP_DIR}"
+WORKDIR "${DHCP_PREFIX}/src"
+COPY --chmod=a+rX dhcp-pipeline.sh version .
+COPY --chmod=a+rX parameters parameters
+COPY --chmod=a+rX scripts scripts
 RUN ln -sv "${DHCP_PREFIX}/share/DrawEM/atlases" "${DHCP_DIR}/atlases"
-RUN find "${DHCP_PREFIX}" -type f -executable 2>/dev/null | xargs ldd 2>/dev/null | grep "=>[[:space:]]*${ONEAPI_ROOT}" | grep -o -E '/\S*' | sort | uniq | tee | xargs -I {} cp -v {} "${DHCP_PREFIX}/lib/" && ldconfig
-
-
-FROM base AS final
-ENV ITK_GLOBAL_DEFAULT_THREADER="tbb"
-ENV DRAWEMDIR="${DHCP_PREFIX}/share/DrawEM"
-
-WORKDIR /
-COPY --from=build-pipeline "${DHCP_PREFIX}" "${DHCP_PREFIX}"
-COPY --chmod=755 --from=build-pipeline /opt/build/mirtk/build/lib/mirtk/tools/N4  "${DHCP_PREFIX}/lib/mirtk/tools/N4"
 RUN cd "$DRAWEMDIR" && git init && git config user.email 'nobody@example.com'; git config user.name 'nobody'; git commit --allow-empty --allow-empty-message --no-verify -m ''
 
+# == FINAL IMAGE ==
+
+FROM base AS final
+
+WORKDIR "${ONEAPI_ROOT}"
+COPY --from=build-pipeline "${ONEAPI_ROOT}/compiler/2024.1" "${ONEAPI_ROOT}/compiler/2024.1"
+COPY --from=build-pipeline "${ONEAPI_ROOT}/mkl/2024.1" "${ONEAPI_ROOT}/mkl/2024.1"
+COPY --from=build-pipeline "${ONEAPI_ROOT}/tbb/2021.12" "${ONEAPI_ROOT}/tbb/2021.12"
+COPY --from=build-pipeline "${ONEAPI_ROOT}/tcm" "${ONEAPI_ROOT}/tcm"
+COPY --from=build-pipeline "${ONEAPI_ROOT}/etc" "${ONEAPI_ROOT}/etc"
+COPY --from=build-pipeline "${ONEAPI_ROOT}/common" "${ONEAPI_ROOT}/common"
+COPY --from=build-pipeline "${ONEAPI_ROOT}/setvars.sh" "${ONEAPI_ROOT}/setvars.sh"
+COPY --from=build-pipeline /usr /usr
+COPY --from=build-pipeline /etc /etc
+COPY --from=build-pipeline "${DHCP_PREFIX}" "${DHCP_PREFIX}"
+
+RUN \
+    for x in common compiler mkl tbb tcm; do \
+        cd "${x}" && ln -sv * latest && cd ..; \
+    done
+
+
+WORKDIR "${DHCP_PREFIX}"
+RUN ln -sv "${DHCP_PREFIX}/src/dhcp-pipeline.sh" "${DHCP_PREFIX}/bin/dhcp-pipeline"
+RUN rm -rf '=3.10' # Junk
+
+ENV ITK_GLOBAL_DEFAULT_THREADER="tbb"
+ENV DRAWEMDIR="${DHCP_PREFIX}/share/DrawEM"
+ENV VTK_SMP_BACKEND_IN_USE="${VTK_SMP_BACKEND_IN_USE:-TBB}"
+ENV TBBROOT="${ONEAPI_ROOT}/tbb/latest"
+ENV MKLROOT="${ONEAPI_ROOT}/mkl/latest"
+
+ENV PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin"
+ENV PATH="${DHCP_PREFIX}/bin:${FSLDIR}/bin:/usr/local/cuda-12/bin:${PATH}"
+
+RUN \
+    echo "${DHCP_PREFIX}/lib/mirtk" > /etc/ld.so.conf.d/mirtk.conf && \
+    echo "${TBBROOT}/lib/intel64/gcc4.8" >> /etc/ld.so.conf.d/1-intel.conf && \
+    echo "${MKLROOT}/lib" >> /etc/ld.so.conf.d/1-intel.conf && \
+    echo "${ONEAPI_ROOT}/compiler/latest/lib" >> /etc/ld.so.conf.d/1-intel.conf && \
+    echo "${ONEAPI_ROOT}/compiler/latest/opt/compiler/lib" >> /etc/ld.so.conf.d/1-intel.conf && \
+    ldconfig
+
+RUN \
+    update-alternatives --install /usr/lib/x86_64-linux-gnu/libblas.so    libblas.so-x86_64-linux-gnu      "${MKLROOT}/lib/libmkl_rt.so" 50 && \
+    update-alternatives --install /usr/lib/x86_64-linux-gnu/libblas.so.3  libblas.so.3-x86_64-linux-gnu    "${MKLROOT}/lib/libmkl_rt.so" 50 && \
+    update-alternatives --install /usr/lib/x86_64-linux-gnu/liblapack.so liblapack.so-x86_64-linux-gnu    "${MKLROOT}/lib/libmkl_rt.so" 50 && \
+    update-alternatives --install /usr/lib/x86_64-linux-gnu/liblapack.so.3 liblapack.so.3-x86_64-linux-gnu  "${MKLROOT}/lib/libmkl_rt.so" 50 && \
+    ldconfig
+
 WORKDIR /data
-ENTRYPOINT ["/opt/dhcp/src/dhcp-pipeline.sh"]
+ENTRYPOINT ["/opt/dhcp/bin/dhcp-pipeline"]
 CMD ["-help"]

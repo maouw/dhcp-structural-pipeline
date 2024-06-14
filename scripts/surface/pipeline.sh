@@ -23,7 +23,7 @@ runhemisphere()
   log=logs/$subj.surface.$h-hemisphere.log
   err=logs/$subj.surface.$h-hemisphere.err
   echo "$@"
-  "$@" >$log 2>$err
+  /usr/bin/time -v "$@" >$log 2>$err
   if [ ! $? -eq 0 ]; then
     echo "failed: see log files $log , $err for details"
     exit 1
@@ -37,7 +37,7 @@ command=$@
 subj=$1
 
 datadir=`pwd`
-threads=1
+threads="${threads:-0}"
 
 # check whether the different tools are set and load parameters
 codedir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -54,6 +54,8 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
+
+threadconf
 
 echo "dHCP Surface pipeline
 Subject:    $subj
@@ -163,6 +165,11 @@ fi
 
 if [ ! -f $outwb/$subj.T2.nii.gz ];then
   ln restore/T2/${subj}_restore_defaced.nii.gz $outwb/$subj.T2.nii.gz
+fi
+
+if [ "${exit_after_create_myelin_map:-0}" = 1 ];then
+  echo "exit_after_create_myelin_map is set to 1, so exiting after creating myelin map"
+  exit 0
 fi
 
 # add them to .spec file

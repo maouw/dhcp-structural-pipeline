@@ -45,7 +45,7 @@ runpipeline()
   err=$logdir/$subj.$pipeline.err
   echo "running $pipeline pipeline"
   echo "$@"
-  "$@" >$log 2>$err
+  /usr/bin/time -v "$@" >$log 2>$err
   if [ ! $? -eq 0 ]; then
     echo "Pipeline failed: see log files $log $err for details"
     exit 1
@@ -68,7 +68,7 @@ subj=$subjectID-$sessionID
 T1="-"
 T2="-"
 datadir=`pwd`
-threads=1
+threads="${threads:-0}"
 minimal=1
 noreorient=0
 cleanup=1
@@ -82,12 +82,16 @@ while [ $# -gt 0 ]; do
     -additional)  minimal=0; ;;
     -no-reorient) noreorient=1; ;;
     -no-cleanup) cleanup=0; ;;
+    -no-structure-data) no_structure_data=1; ;;
+    -exit-after-create-myelin-map) export exit_after_create_myelin_map=1; ;;
     -h|-help|--help) usage; ;;
     -*) echo "$0: Unrecognized option $1" >&2; usage; ;;
      *) break ;;
   esac
   shift
 done
+
+[ "${exit_after_create_myelin_map:-0}" -eq 1 ] && no_structure_data=1
 
 # consider the case where the user is running us inside docker with an
 # argument like:
@@ -112,7 +116,14 @@ fi
 [ "$T2" != "-" -a "$T2" != "" ] || { echo "T2 image not provided!" >&2; exit 1; }
 
 # check whether the different tools are set and load parameters
-codedir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+if [ -n "${DHCP_PREFIX:-}" ] && [ -d "${DHCP_PREFIX}/src" ]; then
+    codedir="${DHCP_PREFIX}/src"
+else
+    codedir="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
+fi
+
+export code_dir
+
 . $codedir/parameters/configuration.sh
 
 scriptdir=$codedir/scripts
@@ -173,6 +184,11 @@ runpipeline additional $scriptdir/misc/pipeline.sh $subj $roundedAge -d $workdir
 
 # surface extraction
 runpipeline surface $scriptdir/surface/pipeline.sh $subj -d $workdir -t $threads
+
+if [ "${exit_after_create_myelin_map:-0}" -eq 1 ]; then
+  echo "dHCP pipeline completed!"
+  exit 0
+fi
 
 # create data directory for subject
 runpipeline structure-data $scriptdir/misc/structure-data.sh $subjectID $sessionID $subj $roundedAge $datadir $workdir $minimal

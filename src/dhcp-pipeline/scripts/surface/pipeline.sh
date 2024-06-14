@@ -169,31 +169,31 @@ fi
 run cd $outwb
 rm -f $subj.native.wb.spec
 
-for hi in {0..1}; do
-    h=${Hemi[$hi]}
-    C=${Cortex[$hi]}
+# for hi in {0..1}; do
+#     h=${Hemi[$hi]}
+#     C=${Cortex[$hi]}
 
-    for surf in "${Surf[@]}"; do
-      if [ -f $subj.$h.$surf.native.surf.gii ];then
-        run wb_command -add-to-spec-file $subj.native.wb.spec $C $subj.$h.$surf.native.surf.gii
-      fi
-    done
-done
+#     for surf in "${Surf[@]}"; do
+#       if [ -f $subj.$h.$surf.native.surf.gii ];then
+#         run wb_command -add-to-spec-file $subj.native.wb.spec $C $subj.$h.$surf.native.surf.gii
+#       fi
+#     done
+# done
 
-C=INVALID
-run wb_command -add-to-spec-file $subj.native.wb.spec $C $subj.sulc.native.dscalar.nii
-run wb_command -add-to-spec-file $subj.native.wb.spec $C $subj.curvature.native.dscalar.nii
-run wb_command -add-to-spec-file $subj.native.wb.spec $C $subj.thickness.native.dscalar.nii
-run wb_command -add-to-spec-file $subj.native.wb.spec $C $subj.corrThickness.native.dscalar.nii
-run wb_command -add-to-spec-file $subj.native.wb.spec $C $subj.drawem.native.dlabel.nii
-run wb_command -add-to-spec-file $subj.native.wb.spec $C $subj.T2.nii.gz
+# C=INVALID
+# run wb_command -add-to-spec-file $subj.native.wb.spec $C $subj.sulc.native.dscalar.nii
+# run wb_command -add-to-spec-file $subj.native.wb.spec $C $subj.curvature.native.dscalar.nii
+# run wb_command -add-to-spec-file $subj.native.wb.spec $C $subj.thickness.native.dscalar.nii
+# run wb_command -add-to-spec-file $subj.native.wb.spec $C $subj.corrThickness.native.dscalar.nii
+# run wb_command -add-to-spec-file $subj.native.wb.spec $C $subj.drawem.native.dlabel.nii
+# run wb_command -add-to-spec-file $subj.native.wb.spec $C $subj.T2.nii.gz
 
 
-if [ -f restore/T1/$subj.nii.gz ];then
-  run wb_command -add-to-spec-file $subj.native.wb.spec $C $subj.T1.nii.gz
-  run wb_command -add-to-spec-file $subj.native.wb.spec $C $subj.T1wDividedByT2w_defaced.nii.gz
-  run wb_command -add-to-spec-file $subj.native.wb.spec $C $subj.T1wDividedByT2w_ribbon.nii.gz
-  run wb_command -add-to-spec-file $subj.native.wb.spec $C $subj.MyelinMap.native.dscalar.nii
-  run wb_command -add-to-spec-file $subj.native.wb.spec $C $subj.SmoothedMyelinMap.native.dscalar.nii
-fi
+# if [ -f restore/T1/$subj.nii.gz ];then
+#   run wb_command -add-to-spec-file $subj.native.wb.spec $C $subj.T1.nii.gz
+#   run wb_command -add-to-spec-file $subj.native.wb.spec $C $subj.T1wDividedByT2w_defaced.nii.gz
+#   run wb_command -add-to-spec-file $subj.native.wb.spec $C $subj.T1wDividedByT2w_ribbon.nii.gz
+#   run wb_command -add-to-spec-file $subj.native.wb.spec $C $subj.MyelinMap.native.dscalar.nii
+#   run wb_command -add-to-spec-file $subj.native.wb.spec $C $subj.SmoothedMyelinMap.native.dscalar.nii
+# fi
 

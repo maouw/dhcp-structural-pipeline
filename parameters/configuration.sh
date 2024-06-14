@@ -43,7 +43,7 @@ export surface_recon_config=$parameters_dir/recon-neonatal-cortex2.cfg
 run()
 {
   echo "$@"
-  "$@"
+  /usr/bin/time -v "$@" 2>&1
   if [ ! $? -eq 0 ]; then
     echo "$@ : failed"
     exit 1
@@ -52,3 +52,14 @@ run()
 
 # make run function global
 typeset -fx run
+
+threadconf() {
+    threads="${threads:-0}"
+    [ "${threads:-0}" = "0" ] && threads="$(nproc)"
+    export threads
+    export OMP_NUM_THREADS="${threads}"
+    export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS="${threads}"
+    echo "Threads: $threads; OMP_NUM_THREADS: $OMP_NUM_THREADS; ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS: $ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS; VTK_SMP_BACKEND_IN_USE: $VTK_SMP_BACKEND_IN_USE"
+}
+
+typeset -fx threadconf

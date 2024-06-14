@@ -28,7 +28,7 @@ subj=$2
 age=$3
 
 datadir=`pwd`
-threads=1
+threads="${threads:-0}"
 
 # check whether the different tools are set and load parameters
 codedir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -45,6 +45,8 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
+
+threadconf
 
 echo "dHCP Segmentation pipeline
 T2:         $T2 

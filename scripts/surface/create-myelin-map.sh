@@ -4,7 +4,7 @@ subj=$1
 
 run(){
   echo "$@"
-  "$@"
+  /usr/bin/time -v "$@" 2>&1
   if [ ! $? -eq 0 ]; then
     echo "failed"
     exit 1

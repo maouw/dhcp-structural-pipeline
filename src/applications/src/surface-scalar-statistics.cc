@@ -73,7 +73,7 @@ int main(int argc, char **argv)
   // For weighting by cell area.
   vtkTriangle *triangle;
   vtkIdType *cells;
-  unsigned short noOfCells;
+  tkIdType noOfCells;
   int k;
   vtkIdList *ptIds;
   double v1[3], v2[3], v3[3], triangleArea;

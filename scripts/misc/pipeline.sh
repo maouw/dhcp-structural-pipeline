@@ -50,7 +50,7 @@ subj=$1
 age=$2
 
 datadir=`pwd`
-threads=1
+threads="${threads:-0}"
 
 # check whether the different tools are set and load parameters
 codedir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -68,6 +68,7 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+threadconf
 
 echo "additional files for the dHCP pipeline
 Subject:    $subj 
