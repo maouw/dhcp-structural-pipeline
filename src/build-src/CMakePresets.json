@@ -1,0 +1,63 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 29,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "description": "Base hidden preset to set general options",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "$env{PRESET_COMPILER_WARNINGS} $env{PRESET_COMPILER_OPT} $env{CXX_WARNINGS} $env{CXX_OPT}",
+        "CMAKE_C_FLAGS": "$env{PRESET_COMPILER_WARNINGS} $env{PRESET_COMPILER_OPT} $env{PRESET_C_WARNINGS} $env{PRESET_C_OPT}"
+      }
+    },
+    {
+      "name": "intel",
+      "inherits": "base",
+      "hidden": true,
+      "displayName": "Intel compilers",
+      "environment": {
+        "COMPILER_OPT": "-fp-model=precise"
+      }
+    },
+    {
+      "name": "intel-classic",
+      "inherits": "intel",
+      "displayName": "Intel Classic C/C++ compilers",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "icc",
+        "CMAKE_CXX_COMPILER": "icpc"
+      },
+      "environment": {
+        "PRESET_COMPILER_WARNINGS": "$penv{PRESET_COMPILER_WARNINGS} -diag-once10441,11074,11075,11076",
+        "PRESET_COMPILER_OPT": "$penv{PRESET_COMPILER_OPT} -O3 -xCORE-AVX2 -axSKYLAKE-AVX512 -qopt-zmm-usage=high"
+      }
+    },
+    {
+      "name": "intel-llvm",
+      "inherits": "intel",
+      "displayName": "Intel LLVM C/C++ compilers",
+      "environment": {
+        "CMAKE_C_COMPILER": "icx",
+        "CMAKE_CXX_COMPILER": "icpx",
+        "PRESET_COMPILER_OPT": "$penv{PRESET_COMPILER_OPT} -O3 -xX86-64-V3 -axSKYLAKE-AVX512 -qopt-zmm-usage=high"
+      }
+    },
+    {
+      "name": "intel-clang",
+      "inherits": "intel",
+      "displayName": "Intel LLVM C/C++ compilers (as clang)",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++"
+      },
+      "environment": {
+        "PRESET_COMPILER_OPT": "$penv{PRESET_COMPILER_OPT} -O3 -xX86-64-V3 -axSKYLAKE-AVX512 -qopt-zmm-usage=high"
+      }
+    }
+  ]
+}

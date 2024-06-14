@@ -1,0 +1,430 @@
+# syntax=docker/dockerfile:1
+## Build Docker image for execution of dhcp pipelines within a Docker
+## container with all modules and applications available in the image
+
+FROM ubuntu:20.04 as base
+
+# Global system-level config
+ENV TZ=UTC \
+    LANGUAGE=en_US:en \
+    LC_ALL=C.UTF-8 \
+    LANG=C.UTF-8 \
+    DEBIAN_FRONTEND=noninteractive \
+    APT_KEY_DONT_WARN_ON_DANGEROUS_USAGE=1
+
+# Force apt to leave downloaded binaries in /var/cache/apt (massively speeds up Docker builds)
+RUN rm -f /etc/apt/apt.conf.d/docker-clean; echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache
+
+# Acquire::Queue-Mode: Queuing mode; Queue-Mode can be one of host or access which determines how APT parallelizes outgoing connections. host means that one connection per target host will be opened, access means that one connection per URI type will be opened.
+RUN echo 'Acquire::Queue-Mode "host";' > /etc/apt/apt.conf.d/99queue
+
+# Install tools:
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
+    apt-get update -yq && \
+    apt-get install -yq --no-install-recommends \
+        apt-utils \
+        bc \
+        ca-certificates \
+        curl \
+        git \
+        git-lfs \
+        gpg-agent \
+        less \
+        lz4 \
+        moreutils \
+        nano \
+        net-tools \
+        openssh-client \
+        pkg-config \
+        shared-mime-info \
+        software-properties-common \
+        time \
+        unzip \
+        wget
+
+FROM base as builder-tools
+SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
+<<-EOF
+    apt-get install -yq \
+        build-essential \
+        cmake \
+        libarchive13 \
+        libtool \
+        ninja-build
+EOF
+
+FROM builder-tools as builder-intel
+SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
+<<-EOF
+    { curl -fsSL https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS-2023.PUB | gpg --dearmor > /usr/share/keyrings/intel-oneapi-archive-keyring.gpg || exit 1; }
+    echo "deb [signed-by=/usr/share/keyrings/intel-oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main " > /etc/apt/sources.list.d/oneAPI.list
+    apt-get update -yq
+    apt-get install -yq intel-hpckit-2023.2.0
+    apt-get install -yq intel-oneapi-mkl-devel 
+    apt-get install -yq intel-oneapi-python=2023.2.0-49420
+EOF
+
+# Install headers and libraries:
+FROM builder-intel as builder-headers
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
+    apt-get update -yq && \
+    apt-get install -yq --no-install-recommends \
+        freeglut3-dev \
+        libarpack2-dev \
+        libboost-dev \
+        libboost-math-dev \
+        libboost-random-dev \
+        libcilkrts5 \
+        libcoarrays-openmpi-dev \
+        libeigen3-dev  \
+        libfftw3-dev \
+        libflann-dev \
+        libfreetype6-dev \
+        libftgl-dev \
+        libgl-dev \
+        libglib2.0-dev \
+        libglvnd-dev \
+        libglx-dev \
+        libgtest-dev \
+        libhdf5-dev \
+        liblz4-dev \
+        libjpeg-dev \
+        libnetcdf-dev \
+        libnifti-dev \
+        libosmesa6-dev \
+        libpng-dev \
+        libpng-tools \
+        libqt5opengl5-dev \
+        libqwt-qt5-dev \
+        libssl-dev \
+        libsuitesparse-dev \
+        mesa-utils \
+        qtbase5-dev \
+        uuid-dev \
+        zlib1g-dev
+
+FROM builder-headers as builder-environment
+SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
+RUN \
+<<-EOF
+    mkdir -p /opt/dhcp/{bin,etc,lib,libexec,src,share}
+    chmod -R a+rX /opt/dhcp
+    echo /opt/dhcp/lib > /etc/ld.so.conf.d/dhcp-pipeline.conf
+    ldconfig
+EOF
+
+COPY --chmod=644 parameters/compilervars.sh /opt/dhcp/etc/compilervars.sh
+
+FROM builder-environment as builder-vtk
+WORKDIR /opt/build/vtk
+ADD --link --keep-git-dir=true https://github.com/Kitware/VTK.git#v8.2.0 src
+SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
+RUN <<-EOF
+    (cd src; git submodule update --init --recursive; git fetch --depth 1 origin tag v9.3.0; git checkout v9.3.0 -- CMake/FindTBB.cmake;)
+    set +x
+    source /opt/intel/oneapi/setvars.sh
+    set -x
+    mkdir -p build && cd build
+    export __INTEL_POST_CFLAGS="-std=c++11 -L${MKLROOT}/lib/intel64 -lmkl_intel_lp64 -lmkl_intel_thread -lmkl_core -liomp5 -lpthread -lm -ldl"
+    source "/opt/dhcp/etc/compilervars.sh" 
+
+    cmake -Wno-dev -GNinja \
+            -D CMAKE_INSTALL_PREFIX="/opt/dhcp" \
+            -D CMAKE_PREFIX_PATH="/opt/dhcp:${CMAKE_PREFIX_PATH:-}" \
+            -D CMAKE_BUILD_TYPE=Release \
+            \
+            -D CMAKE_C_COMPILER=icc \
+            -D CMAKE_CXX_COMPILER=icpc \
+            \
+            -D CMAKE_CXX_STANDARD_REQUIRED=ON \
+            -D CMAKE_CXX_STANDARD=11 \
+            -D CMAKE_CXX_EXTENSIONS=OFF \
+            \
+            -D BUILD_SHARED_LIBS=ON \
+            \
+            -D OpenGL_GL_PREFERENCE=GLVND \
+            \
+            -D EIGEN_USE_MKL=ON \
+            -D Module_vtkCommonCore=ON \
+            -D Module_vtkCommonDataModel=ON \
+            -D Module_vtkCommonExecutionModel=ON \
+            -D Module_vtkFiltersCore=ON \
+            -D Module_vtkFiltersFlowPaths=ON \
+            -D Module_vtkFiltersGeneral=ON \
+            -D Module_vtkFiltersGeometry=ON \
+            -D Module_vtkFiltersHybrid=ON \
+            -D Module_vtkFiltersModeling=ON \
+            -D Module_vtkFiltersParallel=ON \
+            -D Module_vtkFiltersSources=ON \
+            -D Module_vtkImagingCore=ON \
+            -D Module_vtkImagingStencil=ON \
+            -D Module_vtkIOGeometry=ON \
+            -D Module_vtkIOImage=ON \
+            -D Module_vtkIOLegacy=ON \
+            -D Module_vtkIOParallel=ON \
+            -D Module_vtkIOPLY=ON \
+            -D Module_vtkIOXML=ON \
+            -D Module_vtkParallelCore=ON \
+            -D Module_vtkRenderingCore=ON \
+            -D Module_vtkRenderingVolumeOpenGL2=ON \
+            -D Module_vtkTestingCore=ON \
+            -D VTK_BUILD_DOCUMENTATION=OFF \
+            -D VTK_BUILD_TESTING=ON \
+            -D VTK_Group_Imaging=ON \
+            -D VTK_Group_Qt=OFF \
+            -D VTK_Group_StandAlone=OFF \
+            -D VTK_Group_Web=OFF \
+            -D VTK_OPENGL_HAS_OSMESA=ON \
+            -D VTK_RENDERING_BACKEND=OpenGL2 \
+            -D VTK_SMP_IMPLEMENTATION_TYPE=OPENMP \
+            -D VTK_USE_MKL=ON \
+            -D VTK_USE_OPENMP=ON \
+            -D VTK_USE_OSMESA=ON \
+            -D VTK_USE_QT=OFF \
+            -D VTK_USE_SYSTEM_EIGEN=OFF \
+            -D VTK_USE_SYSTEM_LZ4=ON \
+            -D VTK_USE_SYSTEM_ZLIB=ON \
+            -D VTK_USE_TK=OFF \
+            -D VTK_WRAP_PYTHON=OFF \
+            -D VTKm_ENABLE_OPENMP=ON \
+            ../src || { tail -v -n +0 CMakeFiles/*.log || true; exit 1; }
+    cmake --build .
+    cmake --install .
+EOF
+
+FROM builder-vtk as builder-itk
+WORKDIR /opt/build/itk
+ADD --link --keep-git-dir=true https://github.com/InsightSoftwareConsortium/ITK.git#v5.3.0 src
+SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
+RUN <<-EOF
+    cd src && git submodule update --init --recursive && cd ../ && ls src
+    exit 1
+    mkdir -p build && cd build
+
+    export __INTEL_POST_CFLAGS="-std=c++14"
+
+    source "/opt/dhcp/etc/compilervars.sh" 
+    
+    cmake -Wno-dev -GNinja \
+            -D CMAKE_C_COMPILER=icc \
+            -D CMAKE_CXX_COMPILER=icpc \
+            -D CMAKE_CXX_STANDARD=14 \
+            -D CMAKE_INSTALL_PREFIX="${BUILT_DIR}" \
+            -D CMAKE_PREFIX_PATH="${BUILT_DIR}:${CMAKE_PREFIX_PATH:-}" \
+            -D CMAKE_BUILD_TYPE=Release \
+            -D BUILD_DOCUMENTATION=OFF \
+            -D BUILD_EXAMPLES=OFF \
+            -D BUILD_SHARED_LIBS=ON \
+            -D BUILD_TESTING=ON \
+            -D OpenGL_GL_PREFERENCE=GLVND \
+            -D ITK_USE_MKL=ON \
+            -D ITK_USE_SYSTEM_EIGEN=ON \
+            -D ITK_USE_SYSTEM_PNG=ON \
+            -D ITK_USE_SYSTEM_ZLIB=ON \
+            -D ITK_USE_TBB=ON \
+        ../src || { tail -v -n +0 CMakeFiles/*.log || true; exit 1; }
+    cmake --build .
+    cmake --install .
+EOF
+
+FROM builder-itk as builder-mirtk-prerequisites
+WORKDIR /opt/build/mirtk
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
+    apt-get update -yq && apt-get install -yq liblz4-dev libcilkrts5 && ldconfig
+
+FROM builder-mirtk-prerequisites as builder-mirtk
+WORKDIR /opt/build/mirtk
+ADD --link --keep-git-dir=true https://github.com/BioMedIA/MIRTK.git src
+SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
+RUN <<-EOF
+    cd src
+    git log -1
+    git submodule update --init --recursive
+
+    # fix: TBB
+    sed -Ei 's/(^.*\bMIRTK_Common_EXPORT\b.*\btbb_scheduler.*$)/\/\/ \1/g' Modules/Common/include/mirtk/Parallel.h
+    sed -Ei 's/(^.*tbb::task_scheduler_init.*$)/\/\/ \1/g' Modules/Common/include/mirtk/Parallel.h
+    sed -Ei 's/(^.*tbb[/]task_scheduler_init.h.*$)/\/\/ \1/g' Modules/Common/include/mirtk/Parallel.h
+
+    echo "set(CMAKE_INSTALL_OPENMP_LIBRARIES FALSE)" >> CMakeLists.txt
+    
+    echo 'find_library(LZ4_LIBRARIES NAMES libvtklz4-9.3.so HINTS "lz4/lib")' >> CMakeLists.txt
+    echo 'link_libraries(${LZ4_LIBRARIES})' >> CMakeLists.txt
+    echo 'add_definitions(${LZ4_DEFINITIONS})' >> CMakeLists.txt
+
+    cd ../
+    mkdir -p build && cd build
+    export __INTEL_POST_CFLAGS="-static-intel -std=c++14 -llz4"
+
+    source "/opt/dhcp/etc/compilervars.sh"    
+    export CMAKE_INSTALL_OPENMP_LIBRARIES=FALSE
+    
+    cmake -Wno-dev -GNinja \
+            -D CMAKE_INSTALL_PREFIX="/opt/dhcp" \
+            -D CMAKE_INSTALL_OPENMP_LIBRARIES=FALSE \
+            -D CMAKE_PREFIX_PATH="/opt/dhcp:${CMAKE_PREFIX_PATH:-}" \
+            -D CMAKE_C_COMPILER=icc \
+            -D CMAKE_CXX_COMPILER=icpc \
+            -D CMAKE_BUILD_TYPE=Release \
+            -D BUILD_SHARED_LIBS=ON \
+            -D BUILD_DOCUMENTATION=OFF  \
+            -D BUILD_CHANGELOG=OFF \
+            -D MODULE_Deformable=ON \
+            -D MODULE_DrawEM=ON \
+            -D WITH_VTK=ON \
+            -D WITH_ITK=ON \
+            -D WITH_TBB=ON \
+            -D WITH_FLANN=ON \
+            -D WITH_MATLAB=OFF \
+            -D MIRTK_USE_SYSTEM_PNG=ON \
+            -D VTK_DIR="/opt/dhcp" \
+            -D ITK_DIR="/opt/dhcp" \
+            -D DEPENDS_VTK_DIR="/opt/dhcp" \
+            -D DEPENDS_ITK_DIR="/opt/dhcp" \
+        ../src || { tail -v -n +0 CMakeFiles/*.log || true; exit 1; }
+    cmake --build .
+    cmake --install .
+    echo "/opt/dhcp/lib/mirtk" > /etc/ld.so.conf.d/mirtk.conf; ldconfig
+EOF
+
+
+FROM builder-mirtk as builder-workbench
+WORKDIR /opt/build/workbench
+SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
+ADD --link --keep-git-dir=true https://github.com/Washington-University/workbench.git src
+RUN <<-EOF
+    echo "Fixing icpc command line error: \"option '-openmp-link=static' is not supported. Please use the replacement option '-qopenmp-link=static'\"" >&2 \
+    sed --in-place -E 's/-openmp-link=static/-qopenmp-link=static/g' src/src/CMakeLists.txt
+    
+    # Modify Intel compiler name match to include icpx, the new Intel CPP compiler:
+    sed --in-place -E '/^IF.*icpc/,/^ENDIF.*MATCHES.*icpc.*/ s/^.*ADD_DEF.*Wall.*/#/; s/\*icpc\$/*icp[cx]\$/g; s/-Wall/-Wno-inconsistent-missing-override -Wno-unused-command-line-argument/g' src/src/CMakeLists.txt
+
+    mkdir -p build && cd build
+    export __INTEL_POST_CFLAGS="-std=c++11 -Wno-c++11-narrowing -Wno-inconsistent-missing-override -static-intel -Wno-unused-command-line-argument"
+
+    source "/opt/dhcp/etc/compilervars.sh"    
+
+    cmake -Wno-dev -GNinja \
+        -D CMAKE_C_COMPILER=icx \
+        -D CMAKE_CXX_COMPILER=icpx \
+        -D CMAKE_CXX_STANDARD=11 \
+        -D CMAKE_CXX_STANDARD_REQUIRED=ON \
+        -D CMAKE_CXX_EXTENSIONS=OFF \
+        -D CMAKE_BUILD_TYPE=Release \
+        -D WORKBENCH_MESA_DIR=/usr \
+        -D WORKBENCH_USE_QT5=TRUE \
+        -D OpenGL_GL_PREFERENCE=GLVND \
+        -D WORKBENCH_USE_QT5_QOPENGL_WIDGET=TRUE \
+        -D WORKBENCH_USE_SIMD=TRUE  \
+        ../src/src
+    cmake --build .
+    cmake --install .
+EOF
+
+FROM builder-workbench as builder-sphericalmesh
+WORKDIR /opt/build/sphericalmesh
+SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
+ADD --link --keep-git-dir=true https://github.com/amakropoulos/SphericalMesh.git#dhcp-v1.2 src
+RUN <<-EOF
+    mkdir -p build && cd build
+    export __INTEL_POST_CFLAGS="-std=gnu++0x -static-intel -Wno-unused-command-line-argument"
+
+    source "/opt/dhcp/etc/compilervars.sh"
+    ldconfig
+
+    cmake -Wno-dev -GNinja \
+        -D CMAKE_C_COMPILER=icc \
+        -D CMAKE_CXX_COMPILER=icpc \
+        -D CMAKE_BUILD_TYPE=Release \
+        -D VTK_DIR="/opt/dhcp" \
+        -D ITK_DIR="/opt/dhcp" \
+        -D MIRTK_DIR="/opt/dhcp" \
+        ../src/src
+    cmake --build .
+    cmake --install .
+EOF
+
+FROM builder-workbench as builder-fsl
+ARG FSL_CONDA_ENV=fsl
+SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
+RUN <<-EOF
+    export __INTEL_POST_CFLAGS="${__INTEL_POST_CFLAGS:-} -std=c++11"
+    source "/opt/dhcp/etc/compilervars.sh"    
+    conda config --append channels https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public
+    conda config --append channels conda-forge
+    conda install -y --verbose -n "${FSL_CONDA_ENV}" fsl-avwutils
+    conda clean --all -y
+    FSLBINS="$(command -v fslmaths || true)"
+    test -n "${FSLBINDS:-}"
+    FSLDIR="${FSLBINS%/*/*}"
+    mkdir -p /etc/fsl
+    echo "export FSLDIR=\"${FSLDIR}\"; . \${FSLDIR}/etc/fslconf/fsl.sh" > "/opt/dhcp/etc/fsl.sh"
+EOF
+
+
+
+FROM builder-fsl as builder-pipeline
+WORKDIR "/opt/build/pipeline"
+COPY --chmod=a+rX dhcp-pipeline.sh version "/opt/dhcp/src"/
+COPY --chmod=a+rX parameters "/opt/dhcp/src"/parameters
+COPY --chmod=a+rX scripts "/opt/dhcp/src"/scripts
+COPY --chmod=a+rX version CMakeLists.txt CHANGES.txt ./src
+COPY --chmod=a+rX applications ./src/applications
+COPY --chmod=a+rX ThirdParty ./src/ThirdParty
+SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
+RUN <<-EOF
+    export __INTEL_POST_CFLAGS="${__INTEL_POST_CFLAGS:-} -std=c++11"
+    source "/opt/dhcp/etc/compilervars.sh"    
+    cmake -Wno-dev -GNinja \
+            -D CMAKE_INSTALL_PREFIX="/opt/dhcp" \
+            -D CMAKE_PREFIX_PATH="/opt/dhcp:${CMAKE_PREFIX_PATH:-}" \
+            -D CMAKE_C_COMPILER=icc \
+            -D CMAKE_CXX_COMPILER=icpc \
+            -D CMAKE_BUILD_TYPE=Release \
+            -D BUILD_SHARED_LIBS=ON \
+            -D MODULE_Deformable=ON \
+            -D MODULE_DrawEM=ON \
+            -D WITH_VTK=ON \
+            -D WITH_TBB=ON \
+            -D WITH_ITK=ON \
+            -D VTK_DIR="/opt/dhcp" \
+            -D ITK_DIR="/opt/dhcp" \
+            -D MIRTK_DIR="/opt/dhcp" \
+        ../src
+    cmake --build .
+    cmake --install .
+    install -v -Dm755 bin/*  /opt/built/bin/
+    install -v -Dm766
+    cd ../
+EOF
+#    echo "export DRAWEMDIR=$DRAWEMDIR" >> $code_dir/parameters/path.sh
+#    echo "export DRAWEMDIR=$DRAWEMDIR" >> $code_dir/parameters/path.sh
+#    echo "export PATH=$pathext:"'${PATH}' >> $code_dir/parameters/path.sh
+
+# FROM builder-itk as builder-atlases
+# WORKDIR "/opt/dhcp/src"
+# ARG ATLASES_URL="https://biomedic.doc.ic.ac.uk/brain-development/downloads/dHCP/atlases-dhcp-structural-pipeline-v1.zip"
+# SHELL ["/bin/bash", "-eEx", "-o", "pipefail", "-c"]
+# RUN <<-EOF
+#     mkdir -p atlases && cd atlases
+#     aria2c -x 4 -s 2 --out=atlases.zip "${ATLASES_URL}"
+#     unzip atlases-dhcp-structural-pipeline-v1.zip -d .
+#     rm atlases-dhcp-structural-pipeline-v1.zip
+# EOF
+#cd Packages/DrawEM/atlases/src
+#unzip atlases-dhcp-structural-pipeline-v1.zip -d /opt/build/mirtk/build/Packages/DrawEM/atlases/src/atlases
+#rm atlases-dhcp-structural-pipeline-v1.zip
+#cd /opt/build/mirtk/build
+#make install
