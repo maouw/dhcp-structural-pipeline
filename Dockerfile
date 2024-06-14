@@ -452,7 +452,9 @@ RUN --mount=type=cache,target=/opt/build/ccache \
     ../src
 
 FROM build-mirtk-config AS build-mirtk
+
 RUN --mount=type=cache,target=/opt/build/ccache \
+    export __INTEL_POST_CFLAGS="${__INTEL_POST_CFLAGS:-} -Wl,--start-group ${MKLROOT}/lib/libmkl_intel_lp64.a ${MKLROOT}/lib/libmkl_tbb_thread.a ${MKLROOT}/lib/libmkl_core.a -Wl,--end-group -L${TBBROOT}/lib/ -ltbb -lstdc++ -lpthread -lm -ldl -static-intel" && \
     cmake --build . -t lib/libMIRTKlbfgs.a && \
     llvm-ranlib lib/libMIRTKlbfgs.a && \
     cmake --build .
@@ -474,7 +476,7 @@ ENV LD_LIBRARY_PATH="${DHCP_PREFIX}/lib/mirtk:${LD_LIBRARY_PATH}"
 
 FROM build-mirtk AS build-workbench-src
 WORKDIR /opt/build/workbench
-ADD --link --keep-git-dir=true https://github.com/Washington-University/workbench.git src
+ADD --link --keep-git-dir=true https://github.com/Washington-University/workbench.git#5b3b27ac93e238abd45f43f40a352767657b620e src
 COPY src/ThirdParty/workbench/src/Nifti/NiftiHeader.cxx src/src/Nifti/NiftiHeader.cxx
 
 RUN sed --in-place -E 's/\.\*icpc\$/ic[px]c$/g; s/\(\s*CMAKE_COMPILER_IS_GNUCC\s+OR\s+CLANG_FLAG\s*\)/TRUE/g; s/-openmp-link=static/-qmkl=parallel -fiopenmp -fopenmp-targets=spir64 -lstdc++/g; s/static-intel//g' src/src/CMakeLists.txt
@@ -558,7 +560,7 @@ WORKDIR "${DHCP_PREFIX}/src"
 COPY --chmod=a+rX dhcp-pipeline.sh version .
 COPY --chmod=a+rX parameters parameters
 COPY --chmod=a+rX scripts scripts
-RUN ln -sv "${DHCP_PREFIX}/share/DrawEM/atlases" "${DHCP_DIR}/atlases"
+RUN ln -sv "${DHCP_PREFIX}/share/DrawEM/atlases" "${DHCP_PREFIX}/atlases"
 RUN cd "$DRAWEMDIR" && git init && git config user.email 'nobody@example.com'; git config user.name 'nobody'; git commit --allow-empty --allow-empty-message --no-verify -m ''
 
 # == FINAL IMAGE ==

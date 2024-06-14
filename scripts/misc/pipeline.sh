@@ -50,7 +50,7 @@ subj=$1
 age=$2
 
 datadir=`pwd`
-threads="${threads:-0}"
+threads=
 
 # check whether the different tools are set and load parameters
 codedir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"

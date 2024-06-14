@@ -37,7 +37,7 @@ command=$@
 subj=$1
 
 datadir=`pwd`
-threads="${threads:-0}"
+threads=
 
 # check whether the different tools are set and load parameters
 codedir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -167,8 +167,8 @@ if [ ! -f $outwb/$subj.T2.nii.gz ];then
   ln restore/T2/${subj}_restore_defaced.nii.gz $outwb/$subj.T2.nii.gz
 fi
 
-if [ "${exit_after_create_myelin_map:-0}" = 1 ];then
-  echo "exit_after_create_myelin_map is set to 1, so exiting after creating myelin map"
+if [ "${DHCP_EXIT_AFTER_CREATE_MYELIN_MAP:-0}" = 1 ];then
+  echo "DHCP_EXIT_AFTER_CREATE_MYELIN_MAP is set to 1, so exiting after creating myelin map at \"${BASH_SOURCE[0]}\":${LINENO}"
   exit 0
 fi
 

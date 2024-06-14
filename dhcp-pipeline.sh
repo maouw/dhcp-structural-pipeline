@@ -36,6 +36,16 @@ Options:
   exit 1
 }
 
+pipeline_enabled() {
+    local pipeline_slug="$(echo "$1" | tr -C '[:alnum:]' '_' | tr '[:lower:]' '[:upper:]')"
+    [ -z "$pipeline_slug" ] && return 1
+    pipeline_slug="DHCP_PIPELINE_ENABLE_${pipeline_slug}"
+    export "${pipeline_slug?}"
+    [ -n "${2:-}" ] && printf -v "$pipeline_slug" "%s" "$2" && return 0
+    [ "${!pipeline_slug:-1}" -le 0 ] && return 1
+    return 0
+}
+
 # log function for completion
 runpipeline()
 {
@@ -43,6 +53,9 @@ runpipeline()
   shift
   log=$logdir/$subj.$pipeline.log
   err=$logdir/$subj.$pipeline.err
+  
+  pipeline_enabled "$pipeline" || { echo "Skipping $pipeline pipeline because DHCP_PIPELINE_ENABLE_${pipeline_slug} is set to 0" ; return 0; }
+  
   echo "running $pipeline pipeline"
   echo "$@"
   /usr/bin/time -v "$@" >$log 2>$err
@@ -68,11 +81,10 @@ subj=$subjectID-$sessionID
 T1="-"
 T2="-"
 datadir=`pwd`
-threads="${threads:-0}"
+threads="${DHCP_NUM_THREADS:-0}"
 minimal=1
 noreorient=0
 cleanup=1
-
 while [ $# -gt 0 ]; do
   case "$1" in
     -T2)  shift; T2=$1; ;;
@@ -82,8 +94,8 @@ while [ $# -gt 0 ]; do
     -additional)  minimal=0; ;;
     -no-reorient) noreorient=1; ;;
     -no-cleanup) cleanup=0; ;;
-    -no-structure-data) no_structure_data=1; ;;
-    -exit-after-create-myelin-map) export exit_after_create_myelin_map=1; ;;
+    -disable-pipeline) shift; pipeline_enabled "$1" 0; ;;
+    -exit-after-create-myelin-map) export DHCP_EXIT_AFTER_CREATE_MYELIN_MAP=1; ;;
     -h|-help|--help) usage; ;;
     -*) echo "$0: Unrecognized option $1" >&2; usage; ;;
      *) break ;;
@@ -91,7 +103,14 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-[ "${exit_after_create_myelin_map:-0}" -eq 1 ] && no_structure_data=1
+if [ "${DHCP_EXIT_AFTER_CREATE_MYELIN_MAP:-0}" = "1" ]; then
+    if pipeline_enabled "structure-data"; then
+        echo "WARNING: DHCP_EXIT_AFTER_CREATE_MYELIN_MAP=1 and DHCP_PIPELINE_ENABLE_STRUCTURE_DATA=1, but the pipeline is set to exit after creating the myelin map. Errors may occur." >&2
+    else
+        echo "WARNING: DHCP_EXIT_AFTER_CREATE_MYELIN_MAP=1 and DHCP_PIPELINE_ENABLE_STRUCTURE_DATA is not set. Setting DHCP_PIPELINE_ENABLE_STRUCTURE_DATA=0." >&2
+        pipeline_enabled "structure-data" 1
+    fi
+fi
 
 # consider the case where the user is running us inside docker with an
 # argument like:
@@ -116,14 +135,7 @@ fi
 [ "$T2" != "-" -a "$T2" != "" ] || { echo "T2 image not provided!" >&2; exit 1; }
 
 # check whether the different tools are set and load parameters
-if [ -n "${DHCP_PREFIX:-}" ] && [ -d "${DHCP_PREFIX}/src" ]; then
-    codedir="${DHCP_PREFIX}/src"
-else
-    codedir="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
-fi
-
-export code_dir
-
+codedir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 . $codedir/parameters/configuration.sh
 
 scriptdir=$codedir/scripts
@@ -153,9 +165,11 @@ last_file=$datadir/derivatives/sub-$subjectID/ses-$sessionID/anat/Native/sub-${s
 if [ -f $last_file ];then echo "dHCP pipeline already completed!";exit; fi
 
 
-# infodir=$datadir/info 
-logdir=$datadir/logs
-workdir=$datadir/workdir/$subj
+# infodir=$datadir/info
+export DHCP_LOGDIR="${DHCP_LOGDIR:-$datadir/log}"
+logdir="${DHCP_LOGDIR}"
+export DHCP_WORKDIR="${DHCP_WORKDIR:-$datadir/workdir}"
+workdir="${DHCP_WORKDIR}"
 # mkdir -p $infodir
 mkdir -p $workdir $logdir
 
@@ -185,8 +199,8 @@ runpipeline additional $scriptdir/misc/pipeline.sh $subj $roundedAge -d $workdir
 # surface extraction
 runpipeline surface $scriptdir/surface/pipeline.sh $subj -d $workdir -t $threads
 
-if [ "${exit_after_create_myelin_map:-0}" -eq 1 ]; then
-  echo "dHCP pipeline completed!"
+if [ "${DHCP_EXIT_AFTER_CREATE_MYELIN_MAP:-0}" -eq 1 ]; then
+  echo "Exiting after creating myelin map"
   exit 0
 fi
 
