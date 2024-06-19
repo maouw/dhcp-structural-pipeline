@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# mise description="Build a Docker image from the current directory"
+
+[[ -n "${XTRACE:-}" ]] && set -x 
+cd "${root}/test-build"
+rm -rf datadir && mkdir datadir && cd datadir
+ln -fv ../_base_dir/* .
+docker run --gpus=all --rm -v "${PWD}:/data" "$1" CC00065XX08 18600 40 -T2 sub-CC00065XX08_ses-18600_T2w.nii.gz -T1 sub-CC00065XX08_ses-18600_T1w.nii.gz -no-cleanup "$@"
+
+

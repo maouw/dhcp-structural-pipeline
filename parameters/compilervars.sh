@@ -4,8 +4,8 @@
 # Unset BASH_ENV if it points to this script
 [ -n "${BASH_VERSION:-}" ] && [ -n "${BASH_SOURCE:-}" ] && [ "${BASH_ENV:-}" ] && [ "$(readlink -f "${BASH_ENV}")" = "$(readlink -f "${BASH_SOURCE}")" ] && export BASH_ENV=""
 
-. "${ONEAPI_ROOT}/compiler/classic/env/vars.sh" >/dev/null || echo "WARNING: Could not load Intel Classic compiler." >&2
 SETVARS_ARGS="--include-intel-llvm" . "${ONEAPI_ROOT}/setvars.sh" >/dev/null || echo "WARNING: Could not load Intel oneAPI vars." >&2
+export TIME="user=%U sys=%S wall=%E cpu=%P %% mmax=%MK mavg=%kK i=%I o=%O swap=%W # %C"
 
 ldconfig
 
@@ -15,17 +15,19 @@ if ("${CC:-cc}" --version 2>/dev/null || true; "${CXX:-c++}" --version 2>/dev/nu
     # 11075: To get full report use -Qopt-report:4 -Qopt-report-phase ipo
     # 11076: To get full report use -qopt-report=4 -qopt-report-phase ipo
     # 10429: Unsupported command line options encountered
-    __INTEL_POST_CFLAGS="-diag-once=10441,11074,11075,11076,10429 -no-cilk${__INTEL_POST_CFLAGS:+ ${__INTEL_POST_CFLAGS:-}}"
-elif ("${CC:-cc}" --version 2>/dev/null || true; "${CXX:-c++}" --version 2>/dev/null || true) | grep -q "Intel.*DPC"; then
+    __INTEL_POST_CFLAGS="-diag-disable=10441 -diag-disable=11074 -diag-disable=11075 -diag-disable=11076 -diag-disable=10429 -no-cilk${__INTEL_POST_CFLAGS:+ ${__INTEL_POST_CFLAGS:-}}"
+else
     __INTEL_POST_CFLAGS="-Wno-unused-command-line-argument${__INTEL_POST_CFLAGS:+ ${__INTEL_POST_CFLAGS:-}}"
 fi
 
-[ -n "${__INTEL_POST_CFLAGS}" ] && export __INTEL_POST_CFLAGS
-[ -n "${__INTEL_PRE_CFLAGS}" ] && export __INTEL_PRE_CFLAGS
+[ -n "${__INTEL_POST_CFLAGS:-}" ] && export __INTEL_POST_CFLAGS
+[ -n "${__INTEL_PRE_CFLAGS:-}" ] && export __INTEL_PRE_CFLAGS
 
 # Set the number of CPUs to use for building:
 export NCPU="${NCPU:-$(nproc)}"
 export CMAKE_BUILD_PARALLEL_LEVEL="${CMAKE_BUILD_PARALLEL_LEVEL:-${NCPU}}"
+
+export CPATH="${DHCP_PREFIX}/include:${DHCP_PREFIX}/include/vtk-9.3:${CPATH:-}"
 
 # Set up cmake to build with verbose output and time the build
 cmake() {
@@ -36,7 +38,7 @@ cmake() {
         case "${__arg}" in
             --build | --build-and-*)
                 echo "Building with CMAKE_BUILD_PARALLEL_LEVEL=\"${CMAKE_BUILD_PARALLEL_LEVEL}\" (NCPU=${NCPU}/$(nproc))" >&2
-                set -- /usr/bin/time -v "$@"
+                set -- /usr/bin/time "$@"
                 break
                 ;;
             *) ;;

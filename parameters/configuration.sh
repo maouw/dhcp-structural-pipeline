@@ -1,19 +1,16 @@
 #!/bin/bash
-
+set -eET -o pipefail
 # local directories
-export parameters_dir="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" 
+export parameters_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 export code_dir=$parameters_dir/..
 
-# setup path from installation
-[ ! -f $parameters_dir/path.sh ] || . $parameters_dir/path.sh
-
-source "${DRAWEMDIR}/parameters/MCRIB/configuration.sh" || { echo "ERROR: Could not load MCRIB configuration from $_"; exit 1; }
+. ${FSLDIR}/etc/fslconf/fsl.sh || { echo "Failed to source FSL from \"${FSLDIR}/etc/fslconf/fsl.sh\""; exit 1; }
 
 # cortical structures of labels file
-export cortical_structures="${CORTICAL?ERROR: CORTICAL not set}"
+export cortical_structures=`cat $DRAWEMDIR/parameters/cortical.csv`
 
 # lookup table used with the wb_command to load labels
-export LUT="${DRAWEMDIR}/parameters/MCRIB/LUT.txt"
+export LUT=$DRAWEMDIR/parameters/segAllLut.txt
 
 # tissue labels of tissue-labels file
 export CSF_label=1
@@ -40,7 +37,7 @@ export registration_config_template=$parameters_dir/ireg.cfg
 # surface reconstuction parameters
 # v2 is for git master MIRTK with tuned pial generation
 
-if [ -n "${DHCP_SURFACE_RECON_CONFIG_FILE:-}" ]; then
+if [ -z "${DHCP_SURFACE_RECON_CONFIG_FILE:-}" ]; then
     DHCP_SURFACE_RECON_CONFIG_FILE="$parameters_dir/recon-neonatal-cortex"
     [ "${DHCP_SURFACE_RECON_CONFIG_VERSION:=2}" != "1" ] && DHCP_SURFACE_RECON_CONFIG_FILE="${DHCP_SURFACE_RECON_CONFIG_FILE}${DHCP_SURFACE_RECON_CONFIG_VERSION}"
     export DHCP_SURFACE_RECON_CONFIG_FILE="${DHCP_SURFACE_RECON_CONFIG_FILE}.cfg"
@@ -53,12 +50,13 @@ else
     exit 1
 fi
 
+echo "Using surface reconstruction configuration file: ${DHCP_SURFACE_RECON_CONFIG_FILE}" >&2
 
 # log function
 run()
 {
   echo "$@"
-  /usr/bin/time -v "$@" 2>&1
+  /usr/bin/time "$@"
   if [ ! $? -eq 0 ]; then
     echo "$@ : failed"
     exit 1
@@ -67,10 +65,3 @@ run()
 
 # make run function global
 typeset -fx run
-
-threads="${DHCP_NUM_THREADS:-${threads:-1}}"
-[ "${threads}" -lt 1 ] && threads=$(nproc)
-export OMP_NUM_THREADS="${threads}"
-export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS="${threads}"
-export VTK_SMP_BACKEND_IN_USE="${VTK_SMP_BACKEND_IN_USE:-TBB}"
-echo "Using threads: $threads; OMP_NUM_THREADS: $OMP_NUM_THREADS; ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS: $ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS; VTK_SMP_BACKEND_IN_USE: $VTK_SMP_BACKEND_IN_USE on machine with nproc=$(nproc)" >&2
