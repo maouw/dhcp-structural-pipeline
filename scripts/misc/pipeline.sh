@@ -10,7 +10,7 @@ Arguments:
   subject                       Subject ID
 
 Options:
-  -d / -data-dir  <directory>   The directory used to run the script and output the files. 
+  -d / -data-dir  <directory>   The directory used to run the script and output the files.
   -h / -help / --help           Print usage.
 "
   exit;
@@ -50,17 +50,14 @@ subj=$1
 age=$2
 
 datadir=`pwd`
-threads=
+threads=0
 
-# check whether the different tools are set and load parameters
-codedir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-. $codedir/../../parameters/configuration.sh
 
 shift; shift
 while [ $# -gt 0 ]; do
   case "$1" in
     -d|-data-dir)  shift; datadir=$1; ;;
-    -t|-threads)  shift; threads=$1; ;; 
+    -t|-threads)  shift; threads=$1; ;;
     -h|-help|--help) usage; ;;
     -*) echo "$0: Unrecognized option $1" >&2; usage; ;;
      *) break ;;
@@ -68,11 +65,13 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-threadconf
+# check whether the different tools are set and load parameters
+codedir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+. $codedir/../../parameters/configuration.sh
 
 echo "additional files for the dHCP pipeline
-Subject:    $subj 
-Directory:  $datadir 
+Subject:    $subj
+Directory:  $datadir
 Threads:    $threads
 
 $BASH_SOURCE $command
@@ -87,17 +86,17 @@ T1masked=restore/T1/${subj}_restore_bet.nii.gz
 T2masked=restore/T2/${subj}_restore_bet.nii.gz
 
 # process T2 (bias correct, masked versions)
-if [ ! -f $T2masked ];then 
+if [ ! -f $T2masked ];then
   cp T2/$subj.nii.gz restore/T2/$subj.nii.gz
   process_image T2
 fi
 
 # register T1 -> T2 and warp
 # process T1 (bias correct, masked versions)
-if [ -f T1/$subj.nii.gz -a ! -f $T1masked ];then 
+if [ -f T1/$subj.nii.gz -a ! -f $T1masked ];then
   mkdir -p restore/T1
 
-  if [ ! -f dofs/$subj-T2-T1-r.dof.gz ];then 
+  if [ ! -f dofs/$subj-T2-T1-r.dof.gz ];then
     # initial rigid registration
     run mirtk padding $T2masked segmentations/${subj}_tissue_labels.nii.gz restore/T1/$subj-T2-brain.nii.gz 3 $CSF_label $CGM_label $BG_label 0
     run mirtk register restore/T1/$subj-T2-brain.nii.gz T1/$subj.nii.gz -model Rigid -dofout dofs/$subj-T2-T1-init-r.dof.gz -threads $threads -v 0
@@ -115,7 +114,7 @@ if [ -f T1/$subj.nii.gz -a ! -f $T1masked ];then
 fi
 
 # transform the serag mask to native and add on the brain mask
-if [ ! -f masks/${subj}_mask_defaced.nii.gz ]; then 
+if [ ! -f masks/${subj}_mask_defaced.nii.gz ]; then
   run mirtk transform-image \
     $parameters_dir/deface/template-$age-facemask.nii.gz \
     masks/${subj}_serag_mask.nii.gz \
@@ -159,10 +158,10 @@ if [ ! -f dofs/template-$age-$subj-n.dof.gz ]; then
     -threads $threads \
     -v 0
 
-  run rm dofs/template-$age-$subj-i.dof.gz 
+  run rm dofs/template-$age-$subj-i.dof.gz
 fi
 
-if [ $age != 40 ]; then 
+if [ $age != 40 ]; then
   if [ ! -f dofs/$subj-template-40-n.dof.gz ]; then
     run mirtk convert-dof \
       dofs/$subj-template-$age-n.dof.gz \

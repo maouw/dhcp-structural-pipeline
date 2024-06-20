@@ -37,20 +37,16 @@ export registration_config_template=$parameters_dir/ireg.cfg
 # surface reconstuction parameters
 # v2 is for git master MIRTK with tuned pial generation
 
-if [ -z "${DHCP_SURFACE_RECON_CONFIG_FILE:-}" ]; then
-    DHCP_SURFACE_RECON_CONFIG_FILE="$parameters_dir/recon-neonatal-cortex"
-    [ "${DHCP_SURFACE_RECON_CONFIG_VERSION:=2}" != "1" ] && DHCP_SURFACE_RECON_CONFIG_FILE="${DHCP_SURFACE_RECON_CONFIG_FILE}${DHCP_SURFACE_RECON_CONFIG_VERSION}"
-    export DHCP_SURFACE_RECON_CONFIG_FILE="${DHCP_SURFACE_RECON_CONFIG_FILE}.cfg"
-fi
+export surface_recon_config="${surface_recon_config:-$parameters_dir/recon-neonatal-cortex.cfg}"
 
-if [ -f "${DHCP_SURFACE_RECON_CONFIG_FILE}" ]; then
-    export surface_recon_config="${DHCP_SURFACE_RECON_CONFIG_FILE}"
-else
-    echo "ERROR: Surface reconstruction configuration file not found: ${DHCP_SURFACE_RECON_CONFIG_FILE}"
-    exit 1
-fi
+threads="${DHCP_NUM_THREADS:-${threads:-1}}"
+((threads < 1)) && threads="$(nproc)"
+export threads
+export OMP_NUM_THREADS="${threads}"
+export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS="${ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS:-${threads}}"
+export VTK_SMP_BACKEND_IN_USE="${VTK_SMP_BACKEND_IN_USE:-TBB}"
+export ITK_GLOBAL_DEFAULT_THREADER="${ITK_GLOBAL_DEFAULT_THREADER:-tbb}"
 
-echo "Using surface reconstruction configuration file: ${DHCP_SURFACE_RECON_CONFIG_FILE}" >&2
 
 # log function
 run()

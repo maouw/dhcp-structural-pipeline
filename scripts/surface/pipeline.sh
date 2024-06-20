@@ -23,7 +23,7 @@ runhemisphere()
   log=logs/$subj.surface.$h-hemisphere.log
   err=logs/$subj.surface.$h-hemisphere.err
   echo "$@"
-  /usr/bin/time -v "$@" >$log 2>$err
+  /usr/bin/time "$@" >$log 2>$err
   if [ ! $? -eq 0 ]; then
     echo "failed: see log files $log , $err for details"
     exit 1
@@ -37,11 +37,7 @@ command=$@
 subj=$1
 
 datadir=`pwd`
-threads=
-
-# check whether the different tools are set and load parameters
-codedir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-. $codedir/../../parameters/configuration.sh
+threads=0
 
 shift
 while [ $# -gt 0 ]; do
@@ -55,7 +51,11 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-threadconf
+
+# check whether the different tools are set and load parameters
+codedir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+. $codedir/../../parameters/configuration.sh
+
 
 echo "dHCP Surface pipeline
 Subject:    $subj

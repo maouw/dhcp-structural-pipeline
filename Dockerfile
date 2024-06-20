@@ -4,7 +4,7 @@
 
 # == BASE IMAGE ==
 FROM mambaorg/micromamba:jammy-cuda-12.4.1 AS base
-
+LABEL stage=base
 USER root
 
 # Global system-level config
@@ -32,15 +32,17 @@ ENV TSFORMAT="%FT%H:%M:%S"
 RUN mkdir -p /data && chmod a+rX /data
 
 WORKDIR /
-RUN echo "${DHCP_PREFIX}/lib" >> /etc/ld.so.conf.d/0-dhcp-pipeline.conf && echo "${DHCP_PREFIX}/lib/mirtk" >> /etc/ld.so.conf.d/0-dhcp-pipeline.conf && ldconfig
+RUN echo "${DHCP_PREFIX}/lib" >> /etc/ld.so.conf.d/0-dhcp-pipeline.conf && \
+    echo "${DHCP_PREFIX}/lib/mirtk" >> /etc/ld.so.conf.d/0-dhcp-pipeline.conf && \
+    echo "${FSLDIR}/lib" >> /etc/ld.so.conf.d/999-fsldir.conf
 
 # Install basic tools
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,target=/var/lib/apt,sharing=locked --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
     export DEBIAN_FRONTEND=noninteractive && \
     apt-get update -q && \
     apt-get install -yq --no-install-recommends \
-        bat \
         bc \
+        bsdextrautils \
         ca-certificates \
         curl \
         dc \
@@ -79,35 +81,31 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         unzip \
         wget \
         zlib1g && \
-    curl -fsSL https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS-2023.PUB | gpg --dearmor > /usr/share/keyrings/intel-oneapi-archive-keyring.gpg && \
-    echo "deb [signed-by=/usr/share/keyrings/intel-oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main " > /etc/apt/sources.list.d/oneAPI.list && \
-    apt-get update -q && \
-    apt-get install -yq --no-install-recommends \
-        intel-oneapi-runtime-mkl \
-        intel-oneapi-runtime-tbb && \
-    update-alternatives --install /usr/lib/x86_64-linux-gnu/libblas.so libblas.so-x86_64-linux-gnu "${ONEAPI_ROOT}/redist/lib/libmkl_rt.so" 50 && \
-    update-alternatives --install /usr/lib/x86_64-linux-gnu/libblas.so.3 libblas.so.3-x86_64-linux-gnu "${ONEAPI_ROOT}/redist/lib/libmkl_rt.so" 50 && \
-    update-alternatives --install /usr/lib/x86_64-linux-gnu/liblapack.so liblapack.so-x86_64-linux-gnu "${ONEAPI_ROOT}/redist/lib/libmkl_rt.so" 50 && \
-    update-alternatives --install /usr/lib/x86_64-linux-gnu/liblapack.so.3 liblapack.so.3-x86_64-linux-gnu "${ONEAPI_ROOT}/redist/lib/libmkl_rt.so" 50 && \
-    ldconfig
+        rm -rf /var/lib/apt/lists/*
 
 # Install Python:
 RUN --mount=type=cache,target=/tmp/mamba-cache,sharing=locked \
     export CONDA_PKGS_DIRS=/tmp/mamba-cache && \
     micromamba create --yes --verbose --prefix "${FSLDIR}" -c intel intel::python && \
-    micromamba install --yes --verbose --prefix "${FSLDIR}" --channel intel --channel https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public --channel conda-forge fsl-avwutils==2209.0 fsl-flirt==2111.0 fsl-bet2==2111.0
-
+    micromamba install --yes --verbose --prefix "${FSLDIR}" --channel intel --channel https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public --channel conda-forge fsl-avwutils==2209.0 fsl-flirt==2111.0 fsl-bet2==2111.0 && \
+    update-alternatives --install /usr/lib/x86_64-linux-gnu/libblas.so libblas.so-x86_64-linux-gnu "${FSLDIR}/lib/libmkl_rt.so" 50 && \
+    update-alternatives --install /usr/lib/x86_64-linux-gnu/libblas.so.3 libblas.so.3-x86_64-linux-gnu "${FSLDIR}/lib/libmkl_rt.so" 50 && \
+    update-alternatives --install /usr/lib/x86_64-linux-gnu/liblapack.so liblapack.so-x86_64-linux-gnu "${FSLDIR}/lib/libmkl_rt.so" 50 && \
+    update-alternatives --install /usr/lib/x86_64-linux-gnu/liblapack.so.3 liblapack.so.3-x86_64-linux-gnu "${FSLDIR}/lib/libmkl_rt.so" 50 && \
+    ldconfig
 
 # == BUIDER SETUP ==
 FROM base AS builder
 
 # Install build tools
 WORKDIR /opt/build
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,target=/var/lib/apt,sharing=locked --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
     export DEBIAN_FRONTEND=noninteractive && \
     . /etc/os-release && \
     test -f /usr/share/doc/kitware-archive-keyring/copyright || wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null && \
     echo "deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ ${UBUNTU_CODENAME} main" | tee /etc/apt/sources.list.d/kitware.list >/dev/null && \
+    curl -fsSL https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS-2023.PUB | gpg --dearmor > /usr/share/keyrings/intel-oneapi-archive-keyring.gpg && \
+    echo "deb [signed-by=/usr/share/keyrings/intel-oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main " > /etc/apt/sources.list.d/oneAPI.list && \
     apt-get update -q && \
     apt-get install -yq --no-install-recommends cmake && \
     cmake_dir="$(find /usr/share -maxdepth 1 -maxdepth 1 -follow -name 'cmake-*.*' | sort -V | head -n 1 || true)" && \
@@ -193,7 +191,7 @@ ENV CC="icx"
 ENV CXX="icpx"
 
 # Default Intel compiler settings:
-ENV INTEL_COMPILER_FLAGS_BASE="-fp-model=precise -fuse-ld=lld -DEIGEN_USE_MKL -DEIGEN_USE_MKL_ALL"
+ENV INTEL_COMPILER_FLAGS_BASE="-fp-model=precise -fuse-ld=lld -DEIGEN_USE_MKL"
 ENV INTEL_COMPILER_FLAGS_OPT="-O3 -xCORE-AVX2 -axSKYLAKE-AVX512 -qopt-zmm-usage=high"
 ENV INTEL_CFLAGS_DEFAULT="${INTEL_COMPILER_FLAGS_BASE} ${INTEL_COMPILER_FLAGS_OPT}"
 ENV INTEL_CXXFLAGS_DEFAULT="${INTEL_CFLAGS_DEFAULT}"
@@ -205,31 +203,38 @@ ENV CXXFLAGS="${INTEL_CXXFLAGS_DEFAULT}"
 
 # CMake CUDA settings:
 ENV CUDACXX="nvcc"
-ENV CUDAHOSTCXX="clang"
-ENV CUDAARCHS="75;86;89"
-ENV CUDAFLAGS="-std=c++17 --compiler-options=\"${INTEL_COMPILER_FLAGS_BASE:-} ${INTEL_COMPILER_FLAGS_OPT:-}\""
+ENV CUDAHOSTCXX="g++-12"
+ARG CUDAARCHS="75;86"
+ENV CUDAARCHS="${CUDAARCHS}"
+ENV CUDAFLAGS="-Xcompiler=-DEIGEN_USE_MKL -Xcompiler=-march=x86-64-v3 -Xcompiler=-O3 -Xcompiler=-fuse-ld=lld"
 
 # File to source to set up the build environment:
-COPY parameters/compilervars.sh /opt/build/compilervars.sh
+COPY --link parameters/compilervars.sh /opt/build/compilervars.sh
 ENV BASH_ENV=/opt/build/compilervars.sh
 ENTRYPOINT ["/bin/bash"]
-SHELL ["/bin/bash", "-eE", "-o", "pipefail", "-c"]
+SHELL ["/bin/bash", "-eET", "-o", "pipefail", "-c"]
 
 # == BUILD PROCESS ==
 
 FROM builder AS build-vtk
+LABEL stage=build-vtk
+
 # Get VTK source code and configure the build
 WORKDIR /opt/build/vtk
-ADD --keep-git-dir=true --link https://github.com/Kitware/VTK.git#release src
-ADD --keep-git-dir=true --link https://github.com/Kitware/VTK-m.git#release src/ThirdParty/vtkm/vtkvtkm/vtk-m
+ADD --keep-git-dir=true https://gitlab.kitware.com/vtk/vtk.git#release src
+RUN rm -rf src/ThirdParty/vtkm/vtkvtkm/vtk-m
+ADD --keep-git-dir=true https://gitlab.kitware.com/vtk/vtk-m.git#release src/ThirdParty/vtkm/vtkvtkm/vtk-m
 
 # Configure VTK build
 WORKDIR /opt/build/vtk/build
+ARG VTK_USE_GPU=1
 RUN --mount=type=cache,target=/opt/build/ccache \
+    VTK_USE_GPU="${VTK_USE_GPU/1/ON}" && \
     cmake \
         -D CMAKE_CXX_STANDARD=17 \
         -D BUILD_SHARED_LIBS=ON \
         -D BUILD_TESTING=OFF \
+        -D VTK_ALL_NEW_OBJECT_FACTORY=ON \
         -D VTK_ENABLE_REMOTE_MODULES=OFF \
         -D VTK_ENABLE_VTKM_OVERRIDES=ON \
         -D VTK_ENABLE_WRAPPING=ON \
@@ -241,13 +246,12 @@ RUN --mount=type=cache,target=/opt/build/ccache \
         -D VTK_GROUP_ENABLE_Web=DONT_WANT \
         -D VTK_GROUP_ENABLE_Imaging=WANT \
         -D VTK_MODULE_USE_EXTERNAL_VTK_eigen=ON \
+        -D VTK_MODULE_USE_EXTERNAL_VTK_zlib=ON \
         -D VTK_SMP_ENABLE_TBB=ON \
         -D VTK_SMP_IMPLEMENTATION_TYPE=TBB \
-        -D VTK_USE_CUDA=ON \
+        -D VTK_USE_CUDA="$VTK_USE_GPU" \
         -D VTK_USE_X=OFF \
-        -D VTK_WRAP_JAVA=OFF \
-        -D VTK_WRAP_PYTHON=ON \
-        -D VTKm_ENABLE_CUDA=ON \
+        -D VTKm_ENABLE_CUDA="$VTK_USE_GPU" \
         -D VTKm_ENABLE_DEVELOPER_FLAGS=OFF \
         -D VTKm_ENABLE_MPI=OFF \
         -D VTKm_ENABLE_RENDERING=OFF \
@@ -335,11 +339,18 @@ RUN --mount=type=cache,target=/opt/build/ccache \
 ARG CUDA_NCPU=1
 RUN --mount=type=cache,target=/opt/build/ccache \
     cmake --build . -t CommonComputationalGeometry CommonCore CommonDataModel CommonExecutionModel CommonMath CommonMisc CommonSystem CommonTransforms FiltersCore FiltersGeneral FiltersGeometry FiltersVerdict ImagingCore && \
-    ( CMAKE_BUILD_PARALLEL_LEVEL="${CUDA_NCPU:-1}" cmake --build . -t vtkm_cont AcceleratorsVTKmCore AcceleratorsVTKmDataModel AcceleratorsVTKmFilters) && \
-    cmake --build . && \
+    [ "${VTK_USE_GPU:-0}" = "1" ] && { VTKM_NCPU="${CUDA_NCPU}"; } || true && \
+    ( export CMAKE_BUILD_PARALLEL_LEVEL="${VTK_NCPU:-${CMAKE_BUILD_PARALLEL_LEVEL}}"; cmake --build . -t vtkm_cont/cuda/all AcceleratorsVTKmCore AcceleratorsVTKmDataModel AcceleratorsVTKmFilters) && \
+    cmake --build .
+
+RUN --mount=type=cache,target=/opt/build/ccache \
     cmake --install .
 
 FROM build-vtk AS build-itk
+LABEL stage=build-itk
+
+ARG ITK_USE_GPU=ON
+
 WORKDIR /opt/build/itk
 ADD --keep-git-dir=true --link https://github.com/InsightSoftwareConsortium/ITK.git#release src
 RUN sed --in-place 's/DMKL_ILP64/DMKL_LP64/g;s/ilp64/lp64/g' src/CMake/FindFFTW.cmake && \
@@ -348,8 +359,8 @@ RUN sed --in-place 's/DMKL_ILP64/DMKL_LP64/g;s/ilp64/lp64/g' src/CMake/FindFFTW.
 WORKDIR /opt/build/itk/build
 RUN --mount=type=cache,target=/opt/build/ccache \
     export \
-        CFLAGS="${CFLAGS//-DEIGEN_USE_MKL_ALL/} -Wno-deprecated -Wno-unused-command-line-argument" \
-        CXXFLAGS="${CXXFLAGS//-DEIGEN_USE_MKL_ALL/} -Wno-deprecated -Wno-unused-command-line-argument" && \
+        CFLAGS="${CFLAGS} -UEIGEN_USE_MKL -Wno-deprecated -Wno-unused-command-line-argument" \
+        CXXFLAGS="${CXXFLAGS} -UEIGEN_USE_MKL -Wno-deprecated -Wno-unused-command-line-argument" && \
     cmake \
         -D BUILD_DOCUMENTATION=OFF \
         -D BUILD_EXAMPLES=OFF \
@@ -357,7 +368,7 @@ RUN --mount=type=cache,target=/opt/build/ccache \
         -D BUILD_TESTING=OFF \
         -D CMAKE_CXX_STANDARD=17 \
         -D CMAKE_CXX_STANDARD_REQUIRED=ON \
-        -D ITK_USE_GPU=ON \
+        -D ITK_USE_GPU=${ITK_USE_GPU:-OFF} \
         -D ITK_USE_KWSTYLE=OFF \
         -D ITK_USE_MKL=ON \
         -D ITK_USE_TBB=ON \
@@ -371,33 +382,41 @@ RUN --mount=type=cache,target=/opt/build/ccache \
         -D ITKGroup_Remote=OFF \
         -D ITKGroup_Segmentation=ON \
         -D ITKGroup_Video=OFF \
-        -D Module_ITKGPUAnisotropicSmoothing=ON \
-        -D Module_ITKGPUCommon=ON \
-        -D Module_ITKGPUImageFilterBase=ON \
-        -D Module_ITKGPUPDEDeformableRegistration=ON \
-        -D Module_ITKGPURegistrationCommon=ON \
-        -D Module_ITKGPUSmoothing=ON \
-        -D Module_ITKGPUThresholding=ON \
+        -D Module_ITKGPUAnisotropicSmoothing=${ITK_USE_GPU:-OFF} \
+        -D Module_ITKGPUCommon=${ITK_USE_GPU:-OFF} \
+        -D Module_ITKGPUImageFilterBase=${ITK_USE_GPU:-OFF} \
+        -D Module_ITKGPUPDEDeformableRegistration=O${ITK_USE_GPU:-OFF}N \
+        -D Module_ITKGPURegistrationCommon=${ITK_USE_GPU:-OFF} \
+        -D Module_ITKGPUSmoothing=${ITK_USE_GPU:-OFF} \
+        -D Module_ITKGPUThresholding=${ITK_USE_GPU:-OFF} \
         -D Module_ITKTBB=ON \
         -D OpenCL_INCLUDE_DIR="${CMPLR_ROOT}/include/sycl" \
     ../src
 
 RUN --mount=type=cache,target=/opt/build/ccache \
-    cmake --build . && \
+    cmake --build .
+
+RUN --mount=type=cache,target=/opt/build/ccache \
     cmake --install .
 
 FROM build-itk AS build-mirtk
+LABEL stage=build-mirtk
+ARG MIRTK_USE_GPU=1
+
 WORKDIR /opt/build/mirtk
 ADD --link --keep-git-dir=true https://github.com/BioMedIA/MIRTK.git#973ce2fe3f9508dec68892dbf97cca39067aa3d6 src
 ADD --link --keep-git-dir=true https://github.com/MIRTK/DrawEM.git#84798b0b7fc924aaef1776b9d8971146a50d082d drawem-src
 RUN rm -rfv src/Packages/DrawEM/* && \
     cp -rv drawem-src/* src/Packages/DrawEM/
 
-COPY src/ThirdParty/mirtk/Packages/DrawEM/ThirdParty/ANTs/antsCommandLineOption.h src/Packages/DrawEM/ThirdParty/ANTs/antsCommandLineOption.h
+COPY --link src/ThirdParty/mirtk/Packages/DrawEM/ThirdParty/ANTs/antsCommandLineOption.h src/Packages/DrawEM/ThirdParty/ANTs/antsCommandLineOption.h
 RUN sed --in-place 's/CXX-11/CXX-17/g' src/CMakeLists.txt
 
 WORKDIR /opt/build/mirtk/build
 RUN --mount=type=cache,target=/opt/build/ccache \
+    export \
+        CFLAGS="${CFLAGS} -UEIGEN_USE_MKL_ALL -Wno-deprecated -Wno-unused-command-line-argument" \
+        CXXFLAGS="${CXXFLAGS} -UEIGEN_USE_MKL_ALL -Wno-deprecated -Wno-unused-command-line-argument" && \
     export LDFLAGS="${LDFLAGS} -Wl,--push-state,--as-needed -llz4 -Wl,--pop-state" && \
     cmake -Wno-dev \
         -D CMAKE_INSTALL_PREFIX="${DHCP_PREFIX}" \
@@ -423,7 +442,9 @@ RUN --mount=type=cache,target=/opt/build/ccache \
     ../src
 
 RUN --mount=type=cache,target=/opt/build/ccache \
-    cmake --build . && \
+    cmake --build .
+
+RUN --mount=type=cache,target=/opt/build/ccache \
     cmake --install . && \
     cp -vb lib/mirtk/tools/N4 "${DHCP_PREFIX}/lib/mirtk/tools/N4" && \
     ln -sfbv "${DHCP_PREFIX}/lib/mirtk/tools/N4" "${DHCP_PREFIX}/bin/N4"
@@ -438,9 +459,11 @@ RUN mkdir -p "${DRAWEMDIR}" && \
     cp -rv /opt/build/mirtk/src/.git/modules/Packages/DrawEM "${DRAWEMDIR}/.git"
 
 FROM build-mirtk AS build-workbench
+LABEL stage=build-workbench
+
 WORKDIR /opt/build/workbench
 ADD --link --keep-git-dir=true https://github.com/Washington-University/workbench.git#5b3b27ac93e238abd45f43f40a352767657b620e src
-COPY src/ThirdParty/workbench/src/Nifti/NiftiHeader.cxx src/src/Nifti/NiftiHeader.cxx
+COPY --link src/ThirdParty/workbench/src/Nifti/NiftiHeader.cxx src/src/Nifti/NiftiHeader.cxx
 
 RUN cd src/src/CZIlib/CZI && ln -sv eigen Eigen
 RUN cp /usr/share/quazip/QuaZip5Config.cmake /opt/build/cmake-dir/Modules/FindQuaZip.cmake
@@ -451,8 +474,8 @@ RUN sed --in-place 's#-openmp-link=static#-fiopenmp -fopenmp-targets=spir64 -fsy
 WORKDIR /opt/build/workbench/build
 RUN --mount=type=cache,target=/opt/build/ccache \
     export \
-        CFLAGS="${CFLAGS//-xCORE-AVX2/} -I/opt/build/workbench/src/src/CZIlib/CZI" \
-        CXXFLAGS="${CXXFLAGS//-xCORE-AVX2/} -I/opt/build/workbench/src/src/CZIlib/CZI -Wno-inconsistent-missing-override -Wno-c++11-narrowing -Wno-deprecated-declarations" && \
+        CFLAGS="${CFLAGS//-xCORE-AVX2/} -UEIGEN_USE_MKL_ALL -I/opt/build/workbench/src/src/CZIlib/CZI" \
+        CXXFLAGS="${CXXFLAGS//-xCORE-AVX2/} -UEIGEN_USE_MKL_ALL -I/opt/build/workbench/src/src/CZIlib/CZI -Wno-inconsistent-missing-override -Wno-c++11-narrowing -Wno-deprecated-declarations" && \
     cmake \
             -D BUILD_DOCUMENTATION=OFF \
             -D BUILD_EXAMPLES=OFF \
@@ -468,21 +491,28 @@ RUN --mount=type=cache,target=/opt/build/ccache \
 RUN --mount=type=cache,target=/opt/build/ccache \
     cmake --build . -t dot && \
     export __INTEL_POST_CFLAGS="${__INTEL_POST_CFLAGS:-} ${INTEL_COMPILER_FLAGS_OPT:-}" && \
-    cmake --build . -t CommandLine/all && \
+    cmake --build . -t CommandLine/all
+
+RUN --mount=type=cache,target=/opt/build/ccache \
     cmake --install .
 
 FROM build-workbench AS build-sphericalmesh
+LABEL stage=build-sphericalmesh
+
 WORKDIR /opt/build/sphericalmesh
 COPY --link src/ThirdParty/SphericalMesh src
 
 WORKDIR /opt/build/sphericalmesh/build
 RUN --mount=type=cache,target=/opt/build/ccache \
     cmake ../src && \
-    cmake --build . && \
+    cmake --build .
+
+RUN --mount=type=cache,target=/opt/build/ccache \
     cmake --install . && \
     install -vpDm755 bin/* "${DHCP_PREFIX}/bin"
 
 FROM build-sphericalmesh AS build-pipeline
+LABEL stage=build-pipeline
 
 WORKDIR /opt/build/pipeline-applications/src
 COPY --link applications applications
@@ -493,22 +523,22 @@ RUN cp -bv /opt/build/mirtk/build/lib/mirtk/tools/N4 "${DHCP_PREFIX}/lib/mirtk/t
 WORKDIR /opt/build/pipeline-applications/build
 RUN --mount=type=cache,target=/opt/build/ccache \
     cmake ../src && \
-    cmake --build . && \
+    cmake --build .
+
+RUN --mount=type=cache,target=/opt/build/ccache \
     cmake --install . && \
     install -v -Dm755 bin/* "${DHCP_PREFIX}/bin"
-
-FROM build-pipeline-applications AS build-pipeline
 
 WORKDIR "${DHCP_PREFIX}/src"
 COPY --link dhcp-pipeline.sh version .
 COPY --link parameters parameters
 COPY --link scripts scripts
-RUN ln -sv "${DHCP_PREFIX}/share/DrawEM/atlases" "${DHCP_PREFIX}/atlases" && ln -sv "${DHCP_PREFIX}/src/dhcp-pipeline.sh" "${DHCP_PREFIX}/bin/dhcp-pipeline"
+RUN ln -sv "${DHCP_PREFIX}/share/DrawEM/atlases" "${DHCP_PREFIX}/src/atlases" && ln -sv "${DHCP_PREFIX}/src/dhcp-pipeline.sh" "${DHCP_PREFIX}/bin/dhcp-pipeline"
 
 # == FINAL IMAGE ==
 
 FROM base AS final
-
+LABEL stage=final
 WORKDIR /
 COPY --link --from=build-pipeline "${DHCP_PREFIX}" "${DHCP_PREFIX}"
 
@@ -518,7 +548,6 @@ WORKDIR /data
 ENV DHCP_DEBUG=1
 ENV TIME="user=%U sys=%S wall=%E cpu=%P %% mmax=%MK mavg=%kK i=%I o=%O swap=%W # %C"
 ENV TSFORMAT="%FT%H:%M:%S"
-ENV PS4=' \D{%Y-%m-%d}T\T [$BASH_SOURCE:$LINENO] '
 ENV __DHCP_DEBUG_PATH_GLOB="/opt/dhcp/*"
 ENV BASH_ENV="${DHCP_PREFIX}/src/parameters/debug.bash"
 ENTRYPOINT ["/opt/dhcp/bin/dhcp-pipeline"]

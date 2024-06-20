@@ -30,7 +30,7 @@ SurfaceSmoothingSigma=`echo "$SurfaceSmoothingFWHM / ( 2 * ( sqrt ( 2 * l ( 2 ) 
 
 if [ -f $T1 ] ; then
 
-    if [ ! -f $outwb/$subj.ribbon.nii.gz ];then 
+    if [ ! -f $outwb/$subj.ribbon.nii.gz ];then
         # create ribbon
         for h in L R ; do
             run wb_command -create-signed-distance-volume $outwb/$subj.$h.pial.native.surf.gii $T2 $outtmp/dist_$h.nii.gz
@@ -54,7 +54,7 @@ if [ -f $T1 ] ; then
     fi
 
     # get T1/T2 ratio
-    if [ ! -f $outwb/$subj.T1wDividedByT2w_ribbon.nii.gz ];then 
+    if [ ! -f $outwb/$subj.T1wDividedByT2w_ribbon.nii.gz ];then
         run wb_command -volume-math "clamp((T1w / T2w), 0, 100)"  $outwb/$subj.T1wDividedByT2w.nii.gz -var T1w $T1 -var T2w $T2 -fixnan 0
         run wb_command -volume-palette $outwb/$subj.T1wDividedByT2w.nii.gz MODE_AUTO_SCALE_PERCENTAGE -pos-percent 4 96 -interpolate true -palette-name videen_style -disp-pos true -disp-neg false -disp-zero false
         run fslmaths $outwb/$subj.T1wDividedByT2w.nii.gz -mul masks/${subj}_mask_defaced.nii.gz $outwb/$subj.T1wDividedByT2w_defaced.nii.gz
@@ -64,9 +64,9 @@ if [ -f $T1 ] ; then
     fi
 
     for h in L R ; do
-        if [ $h = "L" ] ; then 
+        if [ $h = "L" ] ; then
             ribbon="$LeftGreyRibbonValue"
-        elif [ $h = "R" ] ; then 
+        elif [ $h = "R" ] ; then
             ribbon="$RightGreyRibbonValue"
         fi
 
@@ -76,8 +76,8 @@ if [ -f $T1 ] ; then
             run wb_command -metric-dilate $outwb/$subj.$h.MyelinMap.native.func.gii $outwb/$subj.$h.midthickness.native.surf.gii 10 $outwb/$subj.$h.MyelinMap.native.func.gii -nearest -data-roi $outwb/$subj.$h.roi.native.shape.gii
             rm $outtmp/temp_ribbon.nii.gz
 
-            run wb_command -metric-smoothing $outwb/$subj.$h.midthickness.native.surf.gii $outwb/$subj.$h.MyelinMap.native.func.gii "$SurfaceSmoothingSigma" $outwb/$subj.$h.SmoothedMyelinMap.native.func.gii -roi $outwb/$subj.$h.roi.native.shape.gii 
-        
+            run wb_command -metric-smoothing $outwb/$subj.$h.midthickness.native.surf.gii $outwb/$subj.$h.MyelinMap.native.func.gii "$SurfaceSmoothingSigma" $outwb/$subj.$h.SmoothedMyelinMap.native.func.gii -roi $outwb/$subj.$h.roi.native.shape.gii
+
             for STRING in MyelinMap@func SmoothedMyelinMap@func ; do
                 Map=`echo $STRING | cut -d "@" -f 1`
                 Ext=`echo $STRING | cut -d "@" -f 2`
