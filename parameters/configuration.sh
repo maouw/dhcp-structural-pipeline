@@ -37,9 +37,9 @@ export registration_config_template=$parameters_dir/ireg.cfg
 # surface reconstuction parameters
 # v2 is for git master MIRTK with tuned pial generation
 
-export surface_recon_config="${surface_recon_config:-$parameters_dir/recon-neonatal-cortex.cfg}"
+export surface_recon_config="${surface_recon_config:-${parameters_dir}/${surface_recon_config_filename:-recon-neonatal-cortex2.cfg}}"
 
-threads="${DHCP_NUM_THREADS:-${threads:-1}}"
+threads="${DHCP_NUM_THREADS:-${threads:-0}}"
 ((threads < 1)) && threads="$(nproc)"
 export threads
 export OMP_NUM_THREADS="${threads}"

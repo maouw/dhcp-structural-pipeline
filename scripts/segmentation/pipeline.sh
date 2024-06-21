@@ -4,7 +4,7 @@ usage()
 {
   base=$(basename "$0")
   echo "usage: $base volume subject age [options]
-This script runs the dHCP surface pipeline.
+This script runs the dHCP segmentation pipeline.
 
 Arguments:
   volume                        T2 volume to segment
@@ -28,11 +28,6 @@ subj=$2
 age=$3
 
 datadir=`pwd`
-threads=
-
-# check whether the different tools are set and load parameters
-codedir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-. $codedir/../../parameters/configuration.sh
 
 shift; shift; shift
 while [ $# -gt 0 ]; do
@@ -45,6 +40,10 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
+
+# check whether the different tools are set and load parameters
+codedir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+. $codedir/../../parameters/configuration.sh
 
 echo "dHCP Segmentation pipeline
 T2:         $T2 

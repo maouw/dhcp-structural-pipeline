@@ -37,7 +37,6 @@ command=$@
 subj=$1
 
 datadir=`pwd`
-threads=0
 
 shift
 while [ $# -gt 0 ]; do
@@ -80,8 +79,9 @@ mkdir -p $outvtk $outwb $outtmp logs
 
 Hemi=('L' 'R');
 Cortex=('CORTEX_LEFT' 'CORTEX_RIGHT');
-Surf=('white' 'pial' 'midthickness' 'inflated' 'very_inflated' 'sphere');
 
+# Set Surf array from DHCP_USE_SURF variable or use default if not set:
+read -a Surf <<< "${DHCP_USE_SURF-'white pial midthickness inflated very_inflated sphere'}"
 
 # reconstruct surfaces
 completed=1
@@ -149,8 +149,8 @@ if [ -f restore/T1/$subj.nii.gz ];then
   run $codedir/create-myelin-map.sh $subj
 
   for STRINGII in MyelinMap@func SmoothedMyelinMap@func; do
-    Map=`echo $STRINGII | cut -d "@" -f 1`
-    Ext=`echo $STRINGII | cut -d "@" -f 2`
+    Map="${STRINGII%%@*}"
+    Ext="${STRINGII##*}"
     if  [ ! -f $outwb/$subj.$Map.native.dscalar.nii ];then
       run wb_command -cifti-create-dense-scalar $outwb/temp.$subj.$Map.native.dscalar.nii -left-metric $outwb/$subj.L.$Map.native."$Ext".gii -roi-left $outwb/$subj.L.roi.native.shape.gii -right-metric $outwb/$subj.R.${Map}.native."$Ext".gii -roi-right $outwb/$subj.R.roi.native.shape.gii
       run wb_command -set-map-names $outwb/temp.$subj.$Map.native.dscalar.nii -map 1 "${subj}_${Map}"
@@ -167,11 +167,6 @@ if [ ! -f $outwb/$subj.T2.nii.gz ];then
   ln restore/T2/${subj}_restore_defaced.nii.gz $outwb/$subj.T2.nii.gz
 fi
 
-if [ "${DHCP_EXIT_AFTER_CREATE_MYELIN_MAP:-0}" = 1 ];then
-  echo "DHCP_EXIT_AFTER_CREATE_MYELIN_MAP is set to 1, so exiting after creating myelin map at \"${BASH_SOURCE[0]}\":${LINENO}"
-  exit 0
-fi
-
 # add them to .spec file
 run cd $outwb
 rm -f $subj.native.wb.spec
@@ -179,7 +174,6 @@ rm -f $subj.native.wb.spec
 for hi in {0..1}; do
     h=${Hemi[$hi]}
     C=${Cortex[$hi]}
-
     for surf in "${Surf[@]}"; do
       if [ -f $subj.$h.$surf.native.surf.gii ];then
         run wb_command -add-to-spec-file $subj.native.wb.spec $C $subj.$h.$surf.native.surf.gii

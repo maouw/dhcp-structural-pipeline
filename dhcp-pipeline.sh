@@ -30,34 +30,20 @@ Options:
   -t / -threads  <number>       Number of threads (CPU cores) used (default: 1)
   -no-reorient                  The images will not be reoriented before processing (using the FSL fslreorient2std command) (default: False)
   -no-cleanup                   The intermediate files produced (workdir directory) will not be deleted (default: False)
+  -use-recon-neonatal-cortex-v1) Use recon-neonatal-cortex.cfg from earlier version of the dhcp pipeline (default: False)
+  -set-surf) Specify surfaces for the surface pipeline (default: 'white pial midthickness inflated very_inflated sphere')
   -h / -help / --help           Print usage.
 "
     exit 1
 }
 
-pipeline_enabled() {
-    if [[ -n "${DHCP_PIPELINE_EXCUDE_GLOB:-}" ]]; then
-        if (shopt -qs extglob nullglob; [[ "${1:-}" != ${DHCP_PIPELINE_EXCUDE_GLOB} ]]); then
-            return 1
-        fi
-    fi
-    return 0
-}
 
 # log function for completion
 runpipeline() {
     pipeline=$1
     shift
-    if ! pipeline_enabled "${pipeline:-}"; then
-        echo "Skipping ${pipeline} pipeline because it matches DHCP_PIPELINE_EXCUDE_GLOB=\"${DHCP_PIPELINE_GLOB}\"" >&2
-        return 0
-    fi
     echo "Running ${pipeline} pipeline: $*"
-    /usr/bin/time "$@"
-    if [ ! $? -eq 0 ]; then
-        echo "Pipeline failed: see log files ${log} ${err} for details"
-        exit 1
-    fi
+    /usr/bin/time "$@" || {  echo "Pipeline $pipeline failed with code \"$?\""; exit 1; }
     echo "-----------------------"
 }
 
@@ -81,14 +67,15 @@ noreorient=0
 cleanup=1
 while [ $# -gt 0 ]; do
     case "$1" in
-        -T2) shift; T2=$1 ;;
-        -T1) shift; T1=$1 ;;
-        -d | -data-dir) shift; datadir=$1 ;;
-        -t | -threads) shift; threads=$1 ;;
+        -T2) shift; T2="$1" ;;
+        -T1) shift; T1="$1" ;;
+        -d | -data-dir) shift; datadir="$1" ;;
+        -t | -threads) shift; threads="$1" ;;
         -additional) minimal=0 ;;
         -no-reorient) noreorient=1 ;;
         -no-cleanup) cleanup=0 ;;
-        -exit-after-create-myelin-map) export DHCP_EXIT_AFTER_CREATE_MYELIN_MAP=1 ;;
+        -use-recon-neonatal-cortex-v1) export surface_recon_config_filename="recon-neonatal-cortex.cfg" ;;
+        -set-surf) shift; export DHCP_USE_SURF="$1" ;;
         -h | -help | --help) usage ;;
         -*) echo "$0: Unrecognized option $1" >&2; usage ;;
         *) break ;;
